@@ -133,6 +133,17 @@ void cgb_set_envelope(u8 channel, u8 envelope){
 
 
 void cgb_trigger_note(u8 channel){
+    // Triggering a note re-enables the channel, exactly as writing the trigger
+    // bit to NRx4 does on hardware. The emulator never modelled that, while two
+    // paths *clear* the enable bit: a length counter expiring, and a sweep
+    // overflow. Either one therefore silenced that channel permanently for the
+    // rest of the session.
+    //
+    // That is what broke the EXP gain sound. SE_SELECT overflows the sweep on
+    // the menu, which disabled square 1; every later note on that channel --
+    // SE_EXP among them -- was then programmed with correct frequency and
+    // volume into a channel NR52 said was off.
+    REG_NR52 |= (1 << channel);
     gb.Vol[channel] = gb.VolI[channel];
     gb.Len[channel] = gb.LenI[channel];
     if(channel != 2) gb.EnvCounter[channel] = gb.EnvCounterI[channel];
