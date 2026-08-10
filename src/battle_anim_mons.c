@@ -427,7 +427,7 @@ void SetCallbackToStoredInData6(struct Sprite *sprite)
 #else
     u32 callback = (u16)sprite->data[6] | ((u16)sprite->data[7] << 16);
 #endif
-    sprite->callback = (void (*)(struct Sprite *))callback;
+    sprite->callback = (void (*)(struct Sprite *))PTR_REBASE32(callback);
 }
 
 // Sprite data for TranslateSpriteInCircle/Ellipse and related
