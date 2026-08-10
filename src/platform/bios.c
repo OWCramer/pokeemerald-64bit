@@ -91,6 +91,29 @@ static void CPUWriteByte(void *dest, uint8_t val)
 
 void CpuSet(const void *src, void *dst, u32 cnt)
 {
+#ifdef NATIVE_BUILD
+    // A truncated 32-bit pointer is identifiable exactly, not heuristically:
+    // macOS arm64 reserves the low 4GB as __PAGEZERO, so every real pointer --
+    // image, heap, or mmap -- is above 0x100000000. Anything below that lost its
+    // top half and was never rebased (the class documented in PORTING.md).
+    //
+    // An earlier version of this guard compared distance from gScriptBase and
+    // rejected legitimate copies, which broke menu rendering. Do not reintroduce
+    // a distance heuristic: the emulated hardware blocks are not near the anchor.
+    {
+        const uintptr_t kMinValid = 0x100000000UL;
+        if ((uintptr_t)dst < kMinValid || (uintptr_t)src < kMinValid)
+        {
+            // The raw return address is ASLR-slid; log it relative to a
+            // known symbol so it can be resolved with nm after the fact.
+            EmeraldLog("CpuSet BAD PTR src=%p dst=%p cnt=0x%08x callerOff=0x%lx",
+                       src, dst, cnt,
+                       (unsigned long)((const char *)__builtin_return_address(0)
+                                       - (const char *)(const void *)CpuSet));
+            return;
+        }
+    }
+#endif
     if(dst == NULL)
     {
         puts("Attempted to CpuSet to NULL\n");
