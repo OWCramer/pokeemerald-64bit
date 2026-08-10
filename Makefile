@@ -77,7 +77,9 @@ ifeq ($(OS),Windows_NT)
   EXE := .exe
 endif
 
-SDL3 ?= 0
+# The project is SDL3 only; src/platform/sdl2.c is retained for reference but
+# is not maintained. Build with SDL3=0 only if you specifically want it.
+SDL3 ?= 1
 ifneq (,$(filter native3,$(MAKECMDGOALS)))
   NATIVE64 := 1
   SDL3 := 1

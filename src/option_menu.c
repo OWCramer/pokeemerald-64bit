@@ -1,4 +1,5 @@
 #include "global.h"
+#include "platform.h"
 #include "option_menu.h"
 #include "bg.h"
 #include "gpu_regs.h"
@@ -32,6 +33,7 @@ enum
     MENUITEM_SOUND,
     MENUITEM_BUTTONMODE,
     MENUITEM_FRAMETYPE,
+    MENUITEM_CONTROLS,
     MENUITEM_CANCEL,
     MENUITEM_COUNT,
 };
@@ -42,13 +44,54 @@ enum
     WIN_OPTIONS
 };
 
-#define YPOS_TEXTSPEED    (MENUITEM_TEXTSPEED * 16)
-#define YPOS_BATTLESCENE  (MENUITEM_BATTLESCENE * 16)
-#define YPOS_BATTLESTYLE  (MENUITEM_BATTLESTYLE * 16)
-#define YPOS_SOUND        (MENUITEM_SOUND * 16)
-#define YPOS_BUTTONMODE   (MENUITEM_BUTTONMODE * 16)
-#define YPOS_FRAMETYPE    (MENUITEM_FRAMETYPE * 16)
+// The list scrolls rather than being squeezed: eight items no longer fit the
+// 112px window at the original 16px pitch, and the frame tilemap in
+// DrawBgWindowFrames is drawn at hardcoded tile coordinates, so the window
+// itself must not move.
+#define VISIBLE_ROWS 7
+static u8 sScrollOffset;
+static u8 sBindIndex;      // selection within the CONTROLS subpage
 
+#define ROW_Y(item) (((item) - sScrollOffset) * 16)
+static bool8 RowVisible(u8 item)
+{
+    return item >= sScrollOffset && item < sScrollOffset + VISIBLE_ROWS;
+}
+
+#define YPOS_TEXTSPEED    ROW_Y(MENUITEM_TEXTSPEED)
+#define YPOS_BATTLESCENE  ROW_Y(MENUITEM_BATTLESCENE)
+#define YPOS_BATTLESTYLE  ROW_Y(MENUITEM_BATTLESTYLE)
+#define YPOS_SOUND        ROW_Y(MENUITEM_SOUND)
+#define YPOS_BUTTONMODE   ROW_Y(MENUITEM_BUTTONMODE)
+#define YPOS_FRAMETYPE    ROW_Y(MENUITEM_FRAMETYPE)
+
+static const u8 sText_Controls[]  = _("CONTROLS");
+static const u8 sText_PressInput[] = _("PRESS INPUT");
+static const u8 sText_CtrlHint[]   = _("A BIND  SELECT RESET  B BACK");
+static const u8 sText_Replace[]    = _("REPLACE?  A YES  B NO");
+static bool8 sWasRebinding;
+
+// The game renders its own charmap, so SDL's key names need translating.
+static void AsciiToGameText(const char *src, u8 *dst, int dstSize)
+{
+    int i = 0;
+    for (; src[i] != '\0' && i < dstSize - 1; i++)
+    {
+        char c = src[i];
+        if (c >= 'A' && c <= 'Z')      dst[i] = CHAR_A + (c - 'A');
+        else if (c >= 'a' && c <= 'z') dst[i] = CHAR_a + (c - 'a');
+        else if (c >= '0' && c <= '9') dst[i] = CHAR_0 + (c - '0');
+        else if (c == ' ')             dst[i] = CHAR_SPACE;
+        else if (c == '/')             dst[i] = CHAR_SLASH;
+        else if (c == '-')             dst[i] = CHAR_HYPHEN;
+        else                           dst[i] = CHAR_QUESTION_MARK;
+    }
+    dst[i] = EOS;
+}
+
+static void RedrawOptionsPage(u8 taskId);
+static void Task_ControlsMenu(u8 taskId);
+static void DrawControlsPage(void);
 static void Task_OptionMenuFadeIn(u8 taskId);
 static void Task_OptionMenuProcessInput(u8 taskId);
 static void Task_OptionMenuSave(u8 taskId);
@@ -84,6 +127,7 @@ static const u8 *const sOptionMenuItemsNames[MENUITEM_COUNT] =
     [MENUITEM_SOUND]       = gText_Sound,
     [MENUITEM_BUTTONMODE]  = gText_ButtonMode,
     [MENUITEM_FRAMETYPE]   = gText_Frame,
+    [MENUITEM_CONTROLS]    = sText_Controls,
     [MENUITEM_CANCEL]      = gText_OptionMenuCancel,
 };
 
@@ -155,6 +199,14 @@ void CB2_InitOptionMenu(void)
     {
     default:
     case 0:
+        // These are file statics and survive leaving the menu, while
+        // tMenuSelection is reset to 0 on entry. Left stale, the list reopens
+        // scrolled with the cursor logically at row 0, so the highlight is drawn
+        // above the first visible row. Reset before anything is drawn -- the
+        // first DrawOptionMenuTexts happens later in this same init sequence.
+        sScrollOffset = 0;
+        sBindIndex = 0;
+        sWasRebinding = FALSE;
         SetVBlankCallback(NULL);
         gMain.state++;
         break;
@@ -255,6 +307,144 @@ void CB2_InitOptionMenu(void)
     }
 }
 
+static void RedrawOptionsPage(u8 taskId)
+{
+    DrawOptionMenuTexts();
+    TextSpeed_DrawChoices(gTasks[taskId].tTextSpeed);
+    BattleScene_DrawChoices(gTasks[taskId].tBattleSceneOff);
+    BattleStyle_DrawChoices(gTasks[taskId].tBattleStyle);
+    Sound_DrawChoices(gTasks[taskId].tSound);
+    ButtonMode_DrawChoices(gTasks[taskId].tButtonMode);
+    FrameType_DrawChoices(gTasks[taskId].tWindowFrameType);
+    HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
+    CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
+}
+
+// Keep the selected row on screen, returning TRUE if the view moved.
+static bool8 ScrollToSelection(u8 selection)
+{
+    u8 before = sScrollOffset;
+    if (selection < sScrollOffset)
+        sScrollOffset = selection;
+    else if (selection >= sScrollOffset + VISIBLE_ROWS)
+        sScrollOffset = selection - VISIBLE_ROWS + 1;
+    return sScrollOffset != before;
+}
+
+// ---- CONTROLS subpage ----------------------------------------------------
+// A separate page rather than a row on the main list: ten bindings need their
+// own space, and this is where further port-specific settings will go.
+static void DrawControlsPage(void)
+{
+    char ascii[40];
+    u8 text[40];
+    u8 count = Platform_GetBindCount();
+    u8 first = sBindIndex >= VISIBLE_ROWS ? sBindIndex - VISIBLE_ROWS + 1 : 0;
+
+    FillWindowPixelBuffer(WIN_OPTIONS, PIXEL_FILL(1));
+    for (u8 i = 0; i < VISIBLE_ROWS && first + i < count; i++)
+    {
+        u8 idx = first + i;
+        AsciiToGameText(Platform_GetBindName(idx), text, sizeof(text));
+        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, text, 8, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
+
+        if (Platform_IsRebinding() && idx == sBindIndex)
+        {
+            AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sText_PressInput, 104, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
+        }
+        else if (Platform_HasBindConflict() && idx == sBindIndex)
+        {
+            Platform_GetConflictText(ascii, sizeof(ascii));
+            AsciiToGameText(ascii, text, sizeof(text));
+            AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, text, 104, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
+        }
+        else
+        {
+            Platform_GetBindLabel(idx, ascii, sizeof(ascii));
+            AsciiToGameText(ascii, text, sizeof(text));
+            AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, text, 104, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
+        }
+    }
+    if (Platform_HasBindConflict())
+        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sText_Replace, 8, VISIBLE_ROWS * 16 + 1, TEXT_SKIP_DRAW, NULL);
+
+    SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(16, DISPLAY_WIDTH - 16));
+    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE((sBindIndex - first) * 16 + 40, (sBindIndex - first) * 16 + 56));
+    CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
+}
+
+static void Task_ControlsMenu(u8 taskId)
+{
+    // Capture freezes input at the platform layer, so just poll until it ends.
+    if (Platform_IsRebinding())
+    {
+        sWasRebinding = TRUE;
+        DrawControlsPage();
+        return;
+    }
+
+    // Capture just finished: redraw once so the "PRESS INPUT" prompt is replaced
+    // immediately rather than lingering until the next keypress.
+    if (sWasRebinding)
+    {
+        sWasRebinding = FALSE;
+        DrawControlsPage();
+        return;
+    }
+
+    // A captured input that belongs to another action waits for confirmation
+    // rather than silently stealing it.
+    if (Platform_HasBindConflict())
+    {
+        if (JOY_NEW(A_BUTTON))
+        {
+            Platform_ResolveBindConflict(TRUE);
+            DrawControlsPage();
+        }
+        else if (JOY_NEW(B_BUTTON))
+        {
+            Platform_ResolveBindConflict(FALSE);
+            DrawControlsPage();
+        }
+        return;
+    }
+
+    if (JOY_NEW(B_BUTTON))
+    {
+        // Recompute the view from the cursor rather than assuming it is still
+        // valid: the subpage reuses the same window and scroll state.
+        sScrollOffset = 0;
+        ScrollToSelection(gTasks[taskId].tMenuSelection);
+        RedrawOptionsPage(taskId);
+        gTasks[taskId].func = Task_OptionMenuProcessInput;
+        return;
+    }
+    if (JOY_NEW(A_BUTTON))
+    {
+        Platform_BeginRebind(sBindIndex);
+        DrawControlsPage();
+        return;
+    }
+    if (JOY_NEW(SELECT_BUTTON))
+    {
+        // Always a way back if a binding has made the menu awkward to reach.
+        Platform_ResetBindings();
+        DrawControlsPage();
+        return;
+    }
+    if (JOY_NEW(DPAD_UP))
+    {
+        sBindIndex = sBindIndex == 0 ? Platform_GetBindCount() - 1 : sBindIndex - 1;
+        DrawControlsPage();
+    }
+    else if (JOY_NEW(DPAD_DOWN))
+    {
+        if (++sBindIndex >= Platform_GetBindCount())
+            sBindIndex = 0;
+        DrawControlsPage();
+    }
+}
+
 static void Task_OptionMenuFadeIn(u8 taskId)
 {
     if (!gPaletteFade.active)
@@ -266,7 +456,15 @@ static void Task_OptionMenuProcessInput(u8 taskId)
     if (JOY_NEW(A_BUTTON))
     {
         if (gTasks[taskId].tMenuSelection == MENUITEM_CANCEL)
+        {
             gTasks[taskId].func = Task_OptionMenuSave;
+        }
+        else if (gTasks[taskId].tMenuSelection == MENUITEM_CONTROLS)
+        {
+            sBindIndex = 0;
+            DrawControlsPage();
+            gTasks[taskId].func = Task_ControlsMenu;
+        }
     }
     else if (JOY_NEW(B_BUTTON))
     {
@@ -278,7 +476,10 @@ static void Task_OptionMenuProcessInput(u8 taskId)
             gTasks[taskId].tMenuSelection--;
         else
             gTasks[taskId].tMenuSelection = MENUITEM_CANCEL;
-        HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
+        if (ScrollToSelection(gTasks[taskId].tMenuSelection))
+            RedrawOptionsPage(taskId);
+        else
+            HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
     }
     else if (JOY_NEW(DPAD_DOWN))
     {
@@ -286,7 +487,10 @@ static void Task_OptionMenuProcessInput(u8 taskId)
             gTasks[taskId].tMenuSelection++;
         else
             gTasks[taskId].tMenuSelection = 0;
-        HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
+        if (ScrollToSelection(gTasks[taskId].tMenuSelection))
+            RedrawOptionsPage(taskId);
+        else
+            HighlightOptionMenuItem(gTasks[taskId].tMenuSelection);
     }
     else
     {
@@ -374,7 +578,7 @@ static void Task_OptionMenuFadeOut(u8 taskId)
 static void HighlightOptionMenuItem(u8 index)
 {
     SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(16, DISPLAY_WIDTH - 16));
-    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(index * 16 + 40, index * 16 + 56));
+    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(ROW_Y(index) + 40, ROW_Y(index) + 56));
 }
 
 static void DrawOptionMenuChoice(const u8 *text, u8 x, u8 y, u8 style)
@@ -420,6 +624,8 @@ static u8 TextSpeed_ProcessInput(u8 selection)
 
 static void TextSpeed_DrawChoices(u8 selection)
 {
+    if (!RowVisible(MENUITEM_TEXTSPEED))
+        return;
     u8 styles[3];
     s32 widthSlow, widthMid, widthFast, xMid;
 
@@ -454,6 +660,8 @@ static u8 BattleScene_ProcessInput(u8 selection)
 
 static void BattleScene_DrawChoices(u8 selection)
 {
+    if (!RowVisible(MENUITEM_BATTLESCENE))
+        return;
     u8 styles[2];
 
     styles[0] = 0;
@@ -477,6 +685,8 @@ static u8 BattleStyle_ProcessInput(u8 selection)
 
 static void BattleStyle_DrawChoices(u8 selection)
 {
+    if (!RowVisible(MENUITEM_BATTLESTYLE))
+        return;
     u8 styles[2];
 
     styles[0] = 0;
@@ -501,6 +711,8 @@ static u8 Sound_ProcessInput(u8 selection)
 
 static void Sound_DrawChoices(u8 selection)
 {
+    if (!RowVisible(MENUITEM_SOUND))
+        return;
     u8 styles[2];
 
     styles[0] = 0;
@@ -540,6 +752,8 @@ static u8 FrameType_ProcessInput(u8 selection)
 
 static void FrameType_DrawChoices(u8 selection)
 {
+    if (!RowVisible(MENUITEM_FRAMETYPE))
+        return;
     u8 text[16];
     u8 n = selection + 1;
     u16 i;
@@ -594,6 +808,8 @@ static u8 ButtonMode_ProcessInput(u8 selection)
 
 static void ButtonMode_DrawChoices(u8 selection)
 {
+    if (!RowVisible(MENUITEM_BUTTONMODE))
+        return;
     s32 widthNormal, widthLR, widthLA, xLR;
     u8 styles[3];
 
@@ -628,7 +844,10 @@ static void DrawOptionMenuTexts(void)
 
     FillWindowPixelBuffer(WIN_OPTIONS, PIXEL_FILL(1));
     for (i = 0; i < MENUITEM_COUNT; i++)
-        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sOptionMenuItemsNames[i], 8, (i * 16) + 1, TEXT_SKIP_DRAW, NULL);
+    {
+        if (RowVisible(i))
+            AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sOptionMenuItemsNames[i], 8, ROW_Y(i) + 1, TEXT_SKIP_DRAW, NULL);
+    }
     CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
 }
 

@@ -357,25 +357,183 @@ void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
 
 // ---------------------------------------------------------------- input
 
-// Key mappings
-#define KEY_A_BUTTON      SDLK_Z
-#define KEY_B_BUTTON      SDLK_X
-#define KEY_START_BUTTON  SDLK_RETURN
-#define KEY_SELECT_BUTTON SDLK_BACKSLASH
-#define KEY_L_BUTTON      SDLK_A
-#define KEY_R_BUTTON      SDLK_S
-#define KEY_DPAD_UP       SDLK_UP
-#define KEY_DPAD_DOWN     SDLK_DOWN
-#define KEY_DPAD_LEFT     SDLK_LEFT
-#define KEY_DPAD_RIGHT    SDLK_RIGHT
+// ---- rebindable input -------------------------------------------------
+//
+// Bindings live in a runtime table rather than #defines so they can be changed
+// from the in-game options menu, and are persisted to a small text file beside
+// the save. Deliberately NOT in the save block: that would change the save
+// format, and keeping .sav files interchangeable with real hardware is a goal
+// of this port.
+struct GbaBinding
+{
+    u16 gbaKey;
+    const char *name;   // shown in the options UI
+    SDL_Keycode key;    // keyboard binding, SDLK_UNKNOWN if unbound
+    int pad;            // SDL_GamepadButton, -1 if unbound
+};
 
-#define HANDLE_KEYUP(key) \
-case KEY_##key:  keys &= ~key; break;
+#define DEFAULT_BINDINGS { \
+    { A_BUTTON,      "A",      SDLK_Z,         SDL_GAMEPAD_BUTTON_SOUTH }, \
+    { B_BUTTON,      "B",      SDLK_X,         SDL_GAMEPAD_BUTTON_EAST }, \
+    { START_BUTTON,  "START",  SDLK_RETURN,    SDL_GAMEPAD_BUTTON_START }, \
+    { SELECT_BUTTON, "SELECT", SDLK_BACKSLASH, SDL_GAMEPAD_BUTTON_BACK }, \
+    { L_BUTTON,      "L",      SDLK_A,         SDL_GAMEPAD_BUTTON_LEFT_SHOULDER }, \
+    { R_BUTTON,      "R",      SDLK_S,         SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER }, \
+    { DPAD_UP,       "UP",     SDLK_UP,        SDL_GAMEPAD_BUTTON_DPAD_UP }, \
+    { DPAD_DOWN,     "DOWN",   SDLK_DOWN,      SDL_GAMEPAD_BUTTON_DPAD_DOWN }, \
+    { DPAD_LEFT,     "LEFT",   SDLK_LEFT,      SDL_GAMEPAD_BUTTON_DPAD_LEFT }, \
+    { DPAD_RIGHT,    "RIGHT",  SDLK_RIGHT,     SDL_GAMEPAD_BUTTON_DPAD_RIGHT }, \
+}
 
-#define HANDLE_KEYDOWN(key) \
-case KEY_##key:  keys |= key; break;
+static struct GbaBinding sBindings[] = DEFAULT_BINDINGS;
+#define NUM_BINDINGS ((int)(sizeof(sBindings) / sizeof(sBindings[0])))
+
+// Written by the game thread (Platform_BeginRebind) and read by the main
+// thread's event loop, so it must be atomic: as a plain int the event loop
+// never observed the request and the "PRESS INPUT" prompt hung forever.
+static SDL_AtomicInt sRebindIndex;   // -1 unless capturing
+
+// A captured input that already belongs to another action is held here rather
+// than applied, so the game can ask before stealing it. Silently unbinding the
+// other action loses a binding with no indication it happened.
+static SDL_AtomicInt sConflictIndex; // action currently holding it, -1 if none
+static int sPendingTarget;           // action being rebound
+static SDL_Keycode sPendingKey;
+static int sPendingPad;
+static char sBindPath[1024];
 
 static u16 keys;
+
+static void SaveBindings(void)
+{
+    FILE *f = fopen(sBindPath, "w");
+    if (f == NULL)
+        return;
+    for (int i = 0; i < NUM_BINDINGS; i++)
+        fprintf(f, "%s %d %d\n", sBindings[i].name, (int)sBindings[i].key, sBindings[i].pad);
+    fclose(f);
+}
+
+static void LoadBindings(void)
+{
+    FILE *f = fopen(sBindPath, "r");
+    if (f == NULL)
+        return;
+    char name[32];
+    int key, pad;
+    while (fscanf(f, "%31s %d %d", name, &key, &pad) == 3)
+    {
+        for (int i = 0; i < NUM_BINDINGS; i++)
+        {
+            if (strcmp(sBindings[i].name, name) == 0)
+            {
+                sBindings[i].key = (SDL_Keycode)key;
+                sBindings[i].pad = pad;
+                break;
+            }
+        }
+    }
+    fclose(f);
+}
+
+// Assign captured input, clearing it from every other action first so two GBA
+// buttons can never share one input -- otherwise a rebind silently makes an
+// earlier binding unreachable.
+static void CommitRebind(int idx, SDL_Keycode key, int pad)
+{
+    for (int i = 0; i < NUM_BINDINGS; i++)
+    {
+        if (key != SDLK_UNKNOWN && sBindings[i].key == key)
+            sBindings[i].key = SDLK_UNKNOWN;
+        if (pad >= 0 && sBindings[i].pad == pad)
+            sBindings[i].pad = -1;
+    }
+    if (key != SDLK_UNKNOWN)
+        sBindings[idx].key = key;
+    if (pad >= 0)
+        sBindings[idx].pad = pad;
+    keys = 0;
+    SaveBindings();
+}
+
+static void ApplyRebind(SDL_Keycode key, int pad)
+{
+    int idx = SDL_GetAtomicInt(&sRebindIndex);
+    if (idx < 0)
+        return;
+    SDL_SetAtomicInt(&sRebindIndex, -1);
+
+    // Already held by a different action? Hold it pending confirmation.
+    for (int i = 0; i < NUM_BINDINGS; i++)
+    {
+        if (i == idx)
+            continue;
+        if ((key != SDLK_UNKNOWN && sBindings[i].key == key)
+         || (pad >= 0 && sBindings[i].pad == pad))
+        {
+            sPendingTarget = idx;
+            sPendingKey = key;
+            sPendingPad = pad;
+            SDL_SetAtomicInt(&sConflictIndex, i);
+            keys = 0;
+            return;
+        }
+    }
+    CommitRebind(idx, key, pad);
+}
+
+// ---- API for the in-game options screen ----
+u8 Platform_GetBindCount(void) { return (u8)NUM_BINDINGS; }
+const char *Platform_GetBindName(u8 i) { return i < NUM_BINDINGS ? sBindings[i].name : ""; }
+void Platform_BeginRebind(u8 i) { if (i < NUM_BINDINGS) SDL_SetAtomicInt(&sRebindIndex, (int)i); }
+bool8 Platform_IsRebinding(void) { return SDL_GetAtomicInt(&sRebindIndex) >= 0; }
+void Platform_CancelRebind(void) { SDL_SetAtomicInt(&sRebindIndex, -1); }
+void Platform_SaveBindings(void) { SaveBindings(); }
+bool8 Platform_HasBindConflict(void) { return SDL_GetAtomicInt(&sConflictIndex) >= 0; }
+
+// "Z USED BY L" -- what the pending input is, and which action already has it.
+void Platform_GetConflictText(char *out, int outSize)
+{
+    int c = SDL_GetAtomicInt(&sConflictIndex);
+    if (c < 0 || outSize <= 0)
+        return;
+    const char *what = sPendingKey != SDLK_UNKNOWN
+                     ? SDL_GetKeyName(sPendingKey)
+                     : SDL_GetGamepadStringForButton((SDL_GamepadButton)sPendingPad);
+    snprintf(out, outSize, "%s USED BY %s", what ? what : "?", sBindings[c].name);
+}
+
+void Platform_ResolveBindConflict(bool8 replace)
+{
+    if (SDL_GetAtomicInt(&sConflictIndex) < 0)
+        return;
+    if (replace)
+        CommitRebind(sPendingTarget, sPendingKey, sPendingPad);
+    SDL_SetAtomicInt(&sConflictIndex, -1);
+    keys = 0;
+}
+
+void Platform_ResetBindings(void)
+{
+    static const struct GbaBinding defaults[] = DEFAULT_BINDINGS;
+    memcpy(sBindings, defaults, sizeof(sBindings));
+    keys = 0;
+    SaveBindings();
+}
+
+// ASCII description of what `i` is currently bound to, e.g. "Z / A".
+void Platform_GetBindLabel(u8 i, char *out, int outSize)
+{
+    if (i >= NUM_BINDINGS || outSize <= 0)
+        return;
+    const char *k = sBindings[i].key != SDLK_UNKNOWN ? SDL_GetKeyName(sBindings[i].key) : "-";
+    const char *p = sBindings[i].pad >= 0
+                  ? SDL_GetGamepadStringForButton((SDL_GamepadButton)sBindings[i].pad) : NULL;
+    if (p != NULL)
+        snprintf(out, outSize, "%s / %s", k, p);
+    else
+        snprintf(out, outSize, "%s", k);
+}
 
 // On-screen pad, laid out in the same 240x160 logical space the game renders
 // into so the hit boxes and the drawn buttons cannot drift apart. Only shown on
@@ -489,19 +647,15 @@ static u16 GamepadKeys(void)
         return 0;
 
     u16 out = 0;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_SOUTH))         out |= A_BUTTON;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_EAST))          out |= B_BUTTON;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_START))         out |= START_BUTTON;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_BACK))          out |= SELECT_BUTTON;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)) out |= L_BUTTON;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))out |= R_BUTTON;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_DPAD_UP))       out |= DPAD_UP;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN))     out |= DPAD_DOWN;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT))     out |= DPAD_LEFT;
-    if (SDL_GetGamepadButton(sGamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT))    out |= DPAD_RIGHT;
+    for (int i = 0; i < NUM_BINDINGS; i++)
+    {
+        if (sBindings[i].pad >= 0
+         && SDL_GetGamepadButton(sGamepad, (SDL_GamepadButton)sBindings[i].pad))
+            out |= sBindings[i].gbaKey;
+    }
 
-    // Analog stick as a d-pad. MFi controllers vary in how good their d-pads
-    // are, and some (the smaller clip-on ones) are much easier to use on stick.
+    // Analog stick as a d-pad, always on: MFi d-pads vary in quality and the
+    // small clip-on controllers are much easier to use on stick.
     const Sint16 dead = 12000;
     Sint16 ax = SDL_GetGamepadAxis(sGamepad, SDL_GAMEPAD_AXIS_LEFTX);
     Sint16 ay = SDL_GetGamepadAxis(sGamepad, SDL_GAMEPAD_AXIS_LEFTY);
@@ -515,6 +669,11 @@ static u16 GamepadKeys(void)
 
 u16 Platform_GetKeyInput(void)
 {
+    // Freeze input while capturing, so the key being bound does not also act.
+    if (SDL_GetAtomicInt(&sRebindIndex) >= 0)
+        return 0;
+    // While the conflict prompt is up the game still needs A/B, so input is
+    // NOT frozen here -- only during capture itself.
     return keys | GamepadKeys() | TouchKeys();
 }
 
@@ -535,57 +694,48 @@ void ProcessEvents(void)
             break;
 
         case SDL_EVENT_KEY_UP:
-            switch (event.key.key)
+            for (int i = 0; i < NUM_BINDINGS; i++)
             {
-            HANDLE_KEYUP(A_BUTTON)
-            HANDLE_KEYUP(B_BUTTON)
-            HANDLE_KEYUP(START_BUTTON)
-            HANDLE_KEYUP(SELECT_BUTTON)
-            HANDLE_KEYUP(L_BUTTON)
-            HANDLE_KEYUP(R_BUTTON)
-            HANDLE_KEYUP(DPAD_UP)
-            HANDLE_KEYUP(DPAD_DOWN)
-            HANDLE_KEYUP(DPAD_LEFT)
-            HANDLE_KEYUP(DPAD_RIGHT)
-            case SDLK_SPACE:
-                if (speedUp)
-                {
-                    speedUp = false;
-                    timeScale = 1.0;
-                }
-                break;
+                if (sBindings[i].key != SDLK_UNKNOWN && event.key.key == sBindings[i].key)
+                    keys &= ~sBindings[i].gbaKey;
+            }
+            if (event.key.key == SDLK_SPACE && speedUp)
+            {
+                speedUp = false;
+                timeScale = 1.0;
             }
             break;
 
         case SDL_EVENT_KEY_DOWN:
-            switch (event.key.key)
+            // While capturing, the next press is bound rather than played.
+            if (SDL_GetAtomicInt(&sRebindIndex) >= 0)
             {
-            HANDLE_KEYDOWN(A_BUTTON)
-            HANDLE_KEYDOWN(B_BUTTON)
-            HANDLE_KEYDOWN(START_BUTTON)
-            HANDLE_KEYDOWN(SELECT_BUTTON)
-            HANDLE_KEYDOWN(L_BUTTON)
-            HANDLE_KEYDOWN(R_BUTTON)
-            HANDLE_KEYDOWN(DPAD_UP)
-            HANDLE_KEYDOWN(DPAD_DOWN)
-            HANDLE_KEYDOWN(DPAD_LEFT)
-            HANDLE_KEYDOWN(DPAD_RIGHT)
-            case SDLK_R:
-                if (event.key.mod & SDL_KMOD_CTRL)
-                    SDL_SetAtomicInt(&sResetRequested, 1);
-                break;
-            case SDLK_P:
-                if (event.key.mod & SDL_KMOD_CTRL)
-                    paused = !paused;
-                break;
-            case SDLK_SPACE:
-                if (!speedUp)
-                {
-                    speedUp = true;
-                    timeScale = 5.0;
-                }
+                if (event.key.key == SDLK_ESCAPE)
+                    Platform_CancelRebind();
+                else
+                    ApplyRebind(event.key.key, -1);
                 break;
             }
+            for (int i = 0; i < NUM_BINDINGS; i++)
+            {
+                if (sBindings[i].key != SDLK_UNKNOWN && event.key.key == sBindings[i].key)
+                    keys |= sBindings[i].gbaKey;
+            }
+            if (event.key.key == SDLK_R && (event.key.mod & SDL_KMOD_CTRL))
+                SDL_SetAtomicInt(&sResetRequested, 1);
+            else if (event.key.key == SDLK_P && (event.key.mod & SDL_KMOD_CTRL))
+                paused = !paused;
+            else if (event.key.key == SDLK_SPACE && !speedUp)
+            {
+                speedUp = true;
+                timeScale = 5.0;
+            }
+            break;
+
+        // Capture pad presses too, so a controller can be rebound from itself.
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            if (SDL_GetAtomicInt(&sRebindIndex) >= 0)
+                ApplyRebind(SDLK_UNKNOWN, event.gbutton.button);
             break;
 
         case SDL_EVENT_FINGER_DOWN:
@@ -654,12 +804,17 @@ static void ResolveSavePath(void)
     if (pref)
     {
         snprintf(sSavePath, sizeof(sSavePath), "%spokeemerald.sav", pref);
+        snprintf(sBindPath, sizeof(sBindPath), "%scontrols.cfg", pref);
         SDL_free(pref);
     }
     else
     {
         snprintf(sSavePath, sizeof(sSavePath), "pokeemerald.sav");
+        snprintf(sBindPath, sizeof(sBindPath), "controls.cfg");
     }
+    SDL_SetAtomicInt(&sRebindIndex, -1);
+    SDL_SetAtomicInt(&sConflictIndex, -1);
+    LoadBindings();
 }
 
 static void ReadSaveFile(const char *path)
