@@ -74,7 +74,7 @@ void *const gMPlayJumpTableTemplate[] =
     MP2K_event_fine,
     MP2K_event_fine,
     MP2K_event_port,
-    MP2K_event_fine,
+    MP2K_event_xcmd,   // 0xCD -- was MP2K_event_fine, which ended the track
     MP2K_event_endtie,
     SampleFreqSet,
     TrackStop,

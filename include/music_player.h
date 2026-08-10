@@ -122,6 +122,7 @@ struct MP2KPlayerCtor {
 };
 
 void clear_modM(struct MP2KPlayerState *unused, struct MP2KTrack *track);
+void MP2K_event_xcmd(struct MP2KPlayerState *, struct MP2KTrack *);
 void MP2K_event_endtie(struct MP2KPlayerState *unused, struct MP2KTrack *track);
 void MP2K_event_lfos(struct MP2KPlayerState *unused, struct MP2KTrack *track);
 void MP2K_event_mod(struct MP2KPlayerState *unused, struct MP2KTrack *track);

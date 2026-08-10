@@ -645,12 +645,10 @@ void MP2K_event_nxx(u8 clock, struct MP2KPlayerState *player, struct MP2KTrack *
             static int checked, on;
             if (!checked) { checked = 1; on = getenv("EMERALD_CGB_TRACE") != NULL; }
             if (on) {
-                printf("CGB ch%u key=%u vel=%u type=0x%02X sweep=0x%02X cfg=0x%08X len=%u prevStatus=0x%02X\n",
-                       (unsigned)cgbType, (unsigned)track->key, (unsigned)track->velocity,
-                       (unsigned)instrument->type, (unsigned)instrument->panSweep,
-                       (unsigned)instrument->squareNoiseConfig, (unsigned)instrument->cgbLength,
-                       (unsigned)chan->status);
-                fflush(stdout);
+                EmeraldLog("CGB ch%u key=%u vel=%u type=0x%02X pri=%u chanPri=%u prevStatus=0x%02X",
+                           (unsigned)cgbType, (unsigned)track->key, (unsigned)track->velocity,
+                           (unsigned)instrument->type, (unsigned)priority,
+                           (unsigned)chan->priority, (unsigned)chan->status);
             }
         }
 #endif
@@ -660,6 +658,16 @@ void MP2K_event_nxx(u8 clock, struct MP2KPlayerState *player, struct MP2KTrack *
         && (chan->status & SOUND_CHANNEL_SF_STOP) == 0) {
             // then make sure this note is higher priority (or same priority but from a later track).
             if (chan->priority > priority || (chan->priority == priority && chan->track < track)) {
+#ifdef NATIVE_BUILD
+                {
+                    extern char *getenv(const char *);
+                    static int c2, on2;
+                    if (!c2) { c2 = 1; on2 = getenv("EMERALD_CGB_TRACE") != NULL; }
+                    if (on2)
+                        EmeraldLog("  CGB ch%u REJECTED pri=%u < chanPri=%u",
+                                   (unsigned)cgbType, (unsigned)priority, (unsigned)chan->priority);
+                }
+#endif
                 return;
             }
         }
@@ -778,6 +786,61 @@ void MP2K_event_nxx(u8 clock, struct MP2KPlayerState *player, struct MP2KTrack *
     
     chan->status = SOUND_CHANNEL_SF_START;
     track->status &= ~0xF;
+}
+
+// XCMD (0xCD) -- extended commands. The portable event table mapped this slot
+// to MP2K_event_fine, which *ends the track*, so any song using an extended
+// command died on reaching it. SE_LOW_HEALTH is the visible casualty: its
+// second command is `XCMD, xIECV, 10`, so the battle low-HP warning stopped
+// before it produced a note.
+//
+// The GBA path never hit this because m4a.c installs ply_xcmd into slot 28 at
+// runtime (gMPlayJumpTable[28] = ply_xcmd); only the portable table was missing
+// it. Mirrors gXcmdTable in m4a_tables.c -- consuming exactly the right number
+// of operand bytes matters even for the commands we do not act on, or the
+// command stream desynchronises.
+void MP2K_event_xcmd(struct MP2KPlayerState *player, struct MP2KTrack *track) {
+    u8 sub = *(track->cmdPtr++);
+
+    switch (sub) {
+    case 0x01: // xWAVE
+        track->cmdPtr += 4;
+        break;
+    case 0x02: // xTYPE
+        track->instrument.type = *(track->cmdPtr++);
+        break;
+    case 0x04: // xATTA
+        track->instrument.attack = *(track->cmdPtr++);
+        break;
+    case 0x05: // xDECA
+        track->instrument.decay = *(track->cmdPtr++);
+        break;
+    case 0x06: // xSUST
+        track->instrument.sustain = *(track->cmdPtr++);
+        break;
+    case 0x07: // xRELE
+        track->instrument.release = *(track->cmdPtr++);
+        break;
+    case 0x08: // xIECV -- pseudo-echo volume
+        track->echoVolume = *(track->cmdPtr++);
+        break;
+    case 0x09: // xIECL -- pseudo-echo length
+        track->echoLength = *(track->cmdPtr++);
+        break;
+    case 0x0A: // xLENG
+        track->instrument.cgbLength = *(track->cmdPtr++);
+        break;
+    case 0x0B: // xSWEE
+        track->instrument.panSweep = *(track->cmdPtr++);
+        break;
+    case 0x0C: // xWAIT
+    case 0x0D:
+        track->cmdPtr += 4;
+        break;
+    default:   // 0x00 and 0x03 are the invalid slots; the GBA maps them to FINE
+        MP2K_event_fine(player, track);
+        break;
+    }
 }
 
 void MP2K_event_endtie(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
