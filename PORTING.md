@@ -340,6 +340,8 @@ idioms, so each needs its own search to find. Six distinct ones so far:
 | `FieldEffectScript_ReadWord` cast to a pointer | `field_effect.c` x4 | `callnative` jumped to `0xffa60bf6` |
 | `SetU32` into a `u8 *` | `battle_setup.c` | no rebase *and* only 4 of 8 bytes written |
 | `SCRIPT_REBASE` evaluating its argument twice | `include/global.h` | every script pointer operand read 8 bytes |
+| an accessor *declared* `u32` returning a pointer | `GetWindowAttribute` | blank pocket names in the bag |
+| reassembled into a local, cast to a pointer on the **next line** | `SetCallbackToStoredInData6` | every battle animation |
 
 **The diagnostic tell is the faulting address.** A wild address that looks like a
 small offset (`0x203edf8`, `0x1800d21`) rather than a real image address
@@ -349,6 +351,27 @@ names the idiom. That turns each of these from an investigation into a lookup.
 Roughly twenty other raw 32-bit reads in the tree are genuine values -- `status`,
 `flags`, `otId` -- and must be left alone, so a blanket rewrite is not an option;
 each site has to be classified.
+
+Two of these hid from earlier sweeps in ways worth remembering:
+
+- **The truncation can be in a return type.** `GetWindowAttribute` was declared
+  `u32`, so all ten call sites cast the result back to a pointer *correctly* and
+  still got a broken one. Grepping call sites finds nothing; the declaration is
+  the bug.
+- **The reassembly and the cast can be on different lines.** Every regex used up
+  to that point required `<< 16` and the pointer cast on one line, so
+  `SetCallbackToStoredInData6` -- which every battle animation depends on --
+  survived four separate sweeps.
+
+A truncated pointer is also easy to mistake for a valid one: `VRAM_` is
+allocated around `0x1060xxxxx`, so a truncated VRAM pointer reads as
+`0x0600xxxx`, which looks exactly like a real GBA VRAM address.
+
+`CpuSet` now reports these rather than faulting on them (see `src/platform/bios.c`).
+The test is exact: macOS arm64 reserves the low 4GB as `__PAGEZERO`, so any
+pointer below `0x100000000` has lost its top half. Do not replace it with a
+distance-from-anchor heuristic -- an earlier attempt at that rejected legitimate
+copies and broke menu rendering.
 
 ### The one that was not a pointer bug
 
