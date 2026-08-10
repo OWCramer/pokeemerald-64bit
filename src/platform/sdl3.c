@@ -60,6 +60,57 @@ static SDL_AudioStream *sAudioStream;
 static jmp_buf sResetJmp;
 static SDL_AtomicInt sResetRequested;
 static SDL_Gamepad *sGamepad;
+static int sTextureW, sTextureH;
+
+// Pixels are always drawn at a whole multiple of their true size, so nothing is
+// ever stretched. A bigger window buys a bigger viewport, not bigger pixels.
+// Scale is capped so the viewport can never be smaller than the vanilla
+// 240x160 -- you get the vanilla view or more of the world, never less.
+static int sPixelScale = 0;   // 0 = auto (largest that still fits 240x160)
+
+static void UpdateViewport(void)
+{
+    int winW = 0, winH = 0;
+    SDL_GetWindowSizeInPixels(sdlWindow, &winW, &winH);
+    if (winW <= 0 || winH <= 0)
+        return;
+
+    int maxScale = winW / DISPLAY_WIDTH;
+    int vMax = winH / DISPLAY_HEIGHT;
+    if (vMax < maxScale) maxScale = vMax;
+    if (maxScale < 1) maxScale = 1;
+
+    int scale = sPixelScale > 0 ? sPixelScale : maxScale;
+    if (scale > maxScale) scale = maxScale;   // never zoom past vanilla framing
+    if (scale < 1) scale = 1;
+
+    SetRenderSize(winW / scale, winH / scale);
+
+    if (gRenderWidth != sTextureW || gRenderHeight != sTextureH)
+    {
+        SDL_Texture *tex = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ABGR1555,
+                                             SDL_TEXTUREACCESS_STREAMING,
+                                             gRenderWidth, gRenderHeight);
+        if (tex != NULL)
+        {
+            SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+            SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
+            if (sdlTexture)
+                SDL_DestroyTexture(sdlTexture);
+            sdlTexture = tex;
+            sTextureW = gRenderWidth;
+            sTextureH = gRenderHeight;
+        }
+    }
+
+    // Present 1:1 at an integer scale rather than letterboxing a fixed 240x160.
+    SDL_SetRenderLogicalPresentation(sdlRenderer, gRenderWidth * scale,
+                                     gRenderHeight * scale,
+                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+}
+
+void Platform_SetPixelScale(int scale) { sPixelScale = scale; UpdateViewport(); }
+int  Platform_GetPixelScale(void)      { return sPixelScale; }
 
 bool speedUp = false;
 unsigned int videoScale = 1;
@@ -155,12 +206,15 @@ int main(int argc, char **argv)
     // therefore made the backdrop transparent and showed the clear colour
     // through it -- a black main-menu background where SDL2 drew it correctly.
     SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_NONE);
+    sTextureW = DISPLAY_WIDTH;
+    sTextureH = DISPLAY_HEIGHT;
 
     simTime = curGameTime = lastGameTime = SDL_GetPerformanceCounter();
 
     SDL_SetAtomicInt(&isFrameAvailable, 0);
     vBlankSemaphore = SDL_CreateSemaphore(0);
 
+    UpdateViewport();
     OpenAudio();
     OpenFirstGamepad();
 
@@ -824,6 +878,11 @@ void ProcessEvents(void)
             isRunning = false;
             break;
 
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+            UpdateViewport();
+            break;
+
         case SDL_EVENT_KEY_UP:
             // Release ignores modifiers: shift is often let go first, and a
             // button that never clears would stick down.
@@ -1049,9 +1108,11 @@ void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 
 void VDraw(SDL_Texture *texture)
 {
-    static uint16_t image[DISPLAY_WIDTH * DISPLAY_HEIGHT];
+    // Sized for the largest viewport; only gRenderWidth x gRenderHeight of it
+    // is used on any given frame.
+    static uint16_t image[512 * 512];
 
-    memset(image, 0, sizeof(image));
+    memset(image, 0, (size_t)gRenderWidth * gRenderHeight * sizeof(uint16_t));
     DrawFrame(image);
 
     // Headless verification: EMERALD_DUMP_FRAME=<n> writes frame n to
@@ -1085,7 +1146,12 @@ void VDraw(SDL_Texture *texture)
         frame++;
     }
 
-    SDL_UpdateTexture(texture, NULL, image, DISPLAY_WIDTH * sizeof(Uint16));
+    // SetRenderExpansionAllowed() runs on the game thread, so the render size
+    // can change between frames without a window event.
+    if (gRenderWidth != sTextureW || gRenderHeight != sTextureH)
+        UpdateViewport();
+
+    SDL_UpdateTexture(texture, NULL, image, gRenderWidth * sizeof(Uint16));
     REG_VCOUNT = 161; // prep for being in VBlank period
 }
 

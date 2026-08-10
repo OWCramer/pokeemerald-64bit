@@ -1,6 +1,7 @@
 #include <limits.h>
 #include "global.h"
 #include "bg.h"
+#include "platform/framedraw.h"
 #include "dma3.h"
 #include "gpu_regs.h"
 
@@ -311,6 +312,10 @@ void ResetBgsAndClearDma3BusyFlags(u32 leftoverFireRedLeafGreenVariable)
 
 void InitBgsFromTemplates(u8 bgMode, const struct BgTemplate *templates, u8 numTemplates)
 {
+    // Any screen that sets up its own BGs gets the vanilla viewport; the
+    // overworld opts back in right after this call.
+    SetRenderExpansionAllowed(FALSE);
+
     int i;
     u8 bg;
 

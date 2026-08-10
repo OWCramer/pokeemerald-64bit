@@ -32,10 +32,77 @@
 
 extern void (*const gIntrTable[])(void);
 
+// Variable render viewport. The game still believes the screen is
+// DISPLAY_WIDTH x DISPLAY_HEIGHT -- every one of the ~720 references outside
+// this file depends on that, and moving them would relocate the whole UI. Only
+// the renderer draws a larger area, with the vanilla 240x160 view centred in it
+// and the offsets below converting between render space and GBA screen space.
+#define RENDER_MAX_WIDTH  512
+#define RENDER_MAX_HEIGHT 512
+
+// Only the overworld draws a scrolling window of map around the screen, so it
+// is the only place where showing more than the vanilla 240x160 is meaningful.
+// Everywhere else the tilemap outside the visible screen is undefined, so the
+// viewport is pinned to 240x160 and the platform layer letterboxes it.
+bool32 gRenderExpansionAllowed = FALSE;
+static int sRequestedWidth  = DISPLAY_WIDTH;
+static int sRequestedHeight = DISPLAY_HEIGHT;
+
+// Bounded by what the field's 256x256px map window can actually supply.
+// Vertically the screen sits 24..56px into that window (the offset depends on
+// travel direction -- see field_camera.c), so 24px in each direction is the
+// most that is real map under every condition. Horizontally the window is only
+// 16px wider than the screen and the view sits flush against its left edge, so
+// there is no slack at all until the field BGs are 512 wide.
+#define RENDER_LIMIT_WIDTH  DISPLAY_WIDTH
+#define RENDER_LIMIT_HEIGHT (DISPLAY_HEIGHT + 24 * 2)
+
+int gRenderWidth  = DISPLAY_WIDTH;
+int gRenderHeight = DISPLAY_HEIGHT;
+int gRenderOffsetX = 0;   // (gRenderWidth  - DISPLAY_WIDTH)  / 2
+int gRenderOffsetY = 0;   // (gRenderHeight - DISPLAY_HEIGHT) / 2
+
+static void ApplyRenderSize(void)
+{
+    int w = gRenderExpansionAllowed ? sRequestedWidth  : DISPLAY_WIDTH;
+    int h = gRenderExpansionAllowed ? sRequestedHeight : DISPLAY_HEIGHT;
+
+    if (w > RENDER_LIMIT_WIDTH)
+        w = RENDER_LIMIT_WIDTH;
+    if (h > RENDER_LIMIT_HEIGHT)
+        h = RENDER_LIMIT_HEIGHT;
+    if (w < DISPLAY_WIDTH)
+        w = DISPLAY_WIDTH;
+    if (h < DISPLAY_HEIGHT)
+        h = DISPLAY_HEIGHT;
+    w &= ~7;
+
+    gRenderWidth   = w;
+    gRenderHeight  = h;
+    gRenderOffsetX = (gRenderWidth  - DISPLAY_WIDTH)  / 2;
+    gRenderOffsetY = (gRenderHeight - DISPLAY_HEIGHT) / 2;
+}
+
+void SetRenderSize(int w, int h)
+{
+    sRequestedWidth  = w;
+    sRequestedHeight = h;
+    ApplyRenderSize();
+}
+
+void SetRenderExpansionAllowed(bool32 allowed)
+{
+    if (allowed != gRenderExpansionAllowed)
+    {
+        gRenderExpansionAllowed = allowed;
+        ApplyRenderSize();
+    }
+}
+
 struct scanlineData {
     uint16_t bgcnts[4];
-    uint16_t winMask[DISPLAY_WIDTH];
-    uint16_t bgMask[DISPLAY_WIDTH];
+    uint16_t winMask[RENDER_MAX_WIDTH];
+    uint16_t bgMask[RENDER_MAX_WIDTH];
     //priority bookkeeping
     char bgtoprio[4]; //background to priority
     char prioritySortedBgs[4][4];
@@ -150,7 +217,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
-    //for (int i = 0; i < DISPLAY_WIDTH; i++)
+    //for (int i = 0; i < gRenderWidth; i++)
     //{
     //  line[i] = 0x8F00;
     //}
@@ -162,7 +229,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = hoffs & 0x1FF;
+    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
     unsigned int yy = (lineNum + voffs) & 0x1FF;
     
     
@@ -218,7 +285,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     //bool shouldBlend = true;
     
     //memset(line, 0x8F00, DISPLAY_WIDTH*2);
-    //for (int i = 0; i < DISPLAY_WIDTH; i++)
+    //for (int i = 0; i < gRenderWidth; i++)
     //{
     //  line[i] = 0x8F00;
     //}
@@ -279,7 +346,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     }
 
     //draw all middle pixels
-    for (int currTile = 1; currTile < ( (DISPLAY_WIDTH / 8)); currTile++)
+    for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
         if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
@@ -341,10 +408,10 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(DISPLAY_WIDTH/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31) + 0x400];
+    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
     else
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -380,7 +447,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     //apply horiziontal mosaic if needed
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -405,7 +472,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
-    //for (int i = 0; i < DISPLAY_WIDTH; i++)
+    //for (int i = 0; i < gRenderWidth; i++)
     //{
     //  line[i] = 0x8F00;
     //}
@@ -417,7 +484,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = hoffs & 0x1FF;
+    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
     unsigned int yy = (lineNum + voffs) & 0x1FF;
     
     
@@ -472,7 +539,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     unsigned int x = 0;
     
     //memset(line, 0x8F00, DISPLAY_WIDTH*2);
-    //for (int i = 0; i < DISPLAY_WIDTH; i++)
+    //for (int i = 0; i < gRenderWidth; i++)
     //{
     //  line[i] = 0x8F00;
     //}
@@ -519,7 +586,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     //}
     
     //draw all middle pixels
-    for (int currTile = 1; currTile < ( (DISPLAY_WIDTH / 8)); currTile++)
+    for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
         if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
@@ -581,10 +648,10 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(DISPLAY_WIDTH/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31) + 0x400];
+    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
     else
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -620,7 +687,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     //apply horiziontal mosaic if needed
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -657,7 +724,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = hoffs & 0x1FF;
+    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
     unsigned int yy = (lineNum + voffs) & 0x1FF;
     
     
@@ -712,7 +779,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     unsigned int x = 0;
     
     //memset(line, 0x8F00, DISPLAY_WIDTH*2);
-    //for (int i = 0; i < DISPLAY_WIDTH; i++)
+    //for (int i = 0; i < gRenderWidth; i++)
     //{
     //  line[i] = 0x8F00;
     //}
@@ -766,7 +833,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     }
     
     //draw all middle pixels
-    for (int currTile = 1; currTile < ( (DISPLAY_WIDTH / 8)); currTile++)
+    for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
         if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
@@ -828,10 +895,10 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(DISPLAY_WIDTH/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31) + 0x400];
+    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
     else
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -867,7 +934,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     //apply horiziontal mosaic if needed
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -902,7 +969,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = hoffs & 0x1FF;
+    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
     unsigned int yy = (lineNum + voffs) & 0x1FF;
     
     
@@ -958,7 +1025,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     bool shouldBlend = true;
     
     //memset(line, 0x8F00, DISPLAY_WIDTH*2);
-    //for (int i = 0; i < DISPLAY_WIDTH; i++)
+    //for (int i = 0; i < gRenderWidth; i++)
     //{
     //  line[i] = 0x8F00;
     //}
@@ -1000,7 +1067,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     }
     
     //draw all middle pixels
-    for (int currTile = 1; currTile < ( (DISPLAY_WIDTH / 8)); currTile++)
+    for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
         if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
@@ -1062,10 +1129,10 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(DISPLAY_WIDTH/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31) + 0x400];
+    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
     else
-        entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
+        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -1101,7 +1168,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     //apply horiziontal mosaic if needed
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -1266,7 +1333,7 @@ static void RenderRotScaleBGScanlineWinBlend(int bgNum, uint16_t control, uint16
 
     if (bgcnt->areaOverflowMode)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8) & maskX;
             int yyy = (realY >> 8) & maskY;
@@ -1286,7 +1353,7 @@ static void RenderRotScaleBGScanlineWinBlend(int bgNum, uint16_t control, uint16
     }
     else
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8);
             int yyy = (realY >> 8);
@@ -1313,7 +1380,7 @@ static void RenderRotScaleBGScanlineWinBlend(int bgNum, uint16_t control, uint16
     //apply mosaic effect if enabled
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -1392,7 +1459,7 @@ static void RenderRotScaleBGScanlineWin(int bgNum, uint16_t control, uint16_t x,
 
     if (bgcnt->areaOverflowMode)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8) & maskX;
             int yyy = (realY >> 8) & maskY;
@@ -1412,7 +1479,7 @@ static void RenderRotScaleBGScanlineWin(int bgNum, uint16_t control, uint16_t x,
     }
     else
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8);
             int yyy = (realY >> 8);
@@ -1439,7 +1506,7 @@ static void RenderRotScaleBGScanlineWin(int bgNum, uint16_t control, uint16_t x,
     //apply mosaic effect if enabled
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -1533,7 +1600,7 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
 
     if (bgcnt->areaOverflowMode)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8) & maskX;
             int yyy = (realY >> 8) & maskY;
@@ -1556,7 +1623,7 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
     }
     else
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8);
             int yyy = (realY >> 8);
@@ -1583,7 +1650,7 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
     //apply mosaic effect if enabled
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -1655,7 +1722,7 @@ static void RenderRotScaleBGScanlineNoEffect(int bgNum, uint16_t control, uint16
 
     if (bgcnt->areaOverflowMode)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8) & maskX;
             int yyy = (realY >> 8) & maskY;
@@ -1677,7 +1744,7 @@ static void RenderRotScaleBGScanlineNoEffect(int bgNum, uint16_t control, uint16
     }
     else
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             int xxx = (realX >> 8);
             int yyy = (realY >> 8);
@@ -1706,7 +1773,7 @@ static void RenderRotScaleBGScanlineNoEffect(int bgNum, uint16_t control, uint16
     //apply mosaic effect if enabled
     if (control & BGCNT_MOSAIC && mosaicBGEffectX > 0)
     {
-        for (int x = 0; x < DISPLAY_WIDTH; x++)
+        for (int x = 0; x < gRenderWidth; x++)
         {
             uint16_t color = line[applyBGHorizontalMosaicEffect(x)];
             line[x] = color;
@@ -1723,7 +1790,7 @@ const u8 spriteSizes[][2] =
     {32, 64},
 };
 
-static void DrawSpritesWinMask(struct scanlineData* scanline, uint16_t vcount)
+static void DrawSpritesWinMask(struct scanlineData* scanline, int vcount)
 {
     int i;
     void *objtiles = VRAM_ + 0x10000;
@@ -1778,13 +1845,18 @@ static void DrawSpritesWinMask(struct scanlineData* scanline, uint16_t vcount)
         int half_width = width / 2;
         int half_height = height / 2;
 
-        int32_t x = oam->x;
-        int32_t y = oam->y;
+        int32_t x = (int32_t)oam->x;
+        int32_t y = (int32_t)oam->y;
 
         if (x >= DISPLAY_WIDTH)
             x -= 512;
         if (y >= DISPLAY_HEIGHT)
             y -= 256;
+
+        // Shift into the viewport horizontally only: the scanline number passed
+        // to the sprite routines is already a GBA line, so the vertical shift is
+        // applied there and adding it here would count it twice.
+        x += gRenderOffsetX;
 
         if (isAffine)
         {
@@ -1943,13 +2015,17 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
     int half_width = width / 2;
     int half_height = height / 2;
 
-    int32_t x = oam->x;
-    int32_t y = oam->y;
+    int32_t x = (int32_t)oam->x;
+    int32_t y = (int32_t)oam->y;
 
     if (x >= DISPLAY_WIDTH)
         x -= 512;
     if (y >= DISPLAY_HEIGHT)
         y -= 256;
+
+    // Horizontal only -- see the note above; vcount already carries the
+    // vertical shift.
+    x += gRenderOffsetX;
     
     int16_t matrix[2][2];
 
@@ -2155,13 +2231,17 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
     }
 
     int half_height = height / 2;
-    int32_t x = oam->x;
-    int32_t y = oam->y;
+    int32_t x = (int32_t)oam->x;
+    int32_t y = (int32_t)oam->y;
 
     if (x >= DISPLAY_WIDTH)
         x -= 512;
     if (y >= DISPLAY_HEIGHT)
         y -= 256;
+
+    // Horizontal only -- see the note above; vcount already carries the
+    // vertical shift.
+    x += gRenderOffsetX;
 
     y += half_height;
 
@@ -2455,7 +2535,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
 }
 
 // Parts of this code heavily borrowed from NanoboyAdvance.
-static void DrawSprites(struct scanlineData* scanline, uint16_t vcount, bool windowsEnabled, uint8_t priority, uint16_t* pixels, bool IsInsideWinIn)
+static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsEnabled, uint8_t priority, uint16_t* pixels, bool IsInsideWinIn)
 {
     int SpriteIndex;
     
@@ -2486,7 +2566,7 @@ static void DrawSprites(struct scanlineData* scanline, uint16_t vcount, bool win
     }
 }
 
-static void DrawScanline(uint16_t *pixels, uint16_t vcount)
+static void DrawScanline(uint16_t *pixels, int vcount)
 {
     unsigned int mode = REG_DISPCNT & 3;
     unsigned char numOfBgs = (mode == 0 ? 4 : 3);
@@ -2556,13 +2636,24 @@ static void DrawScanline(uint16_t *pixels, uint16_t vcount)
     //draw to pixel mask
     if (IsInsideWinIn)
     {
-        for (xpos = 0; xpos < DISPLAY_WIDTH; xpos++)
+        for (xpos = 0; xpos < (unsigned)gRenderWidth; xpos++)
         {
             //win0 checks
-            if (WIN0enable && winCheckHorizontalBounds(WIN0left, WIN0right, xpos))
+            int gx = (int)xpos - gRenderOffsetX;
+            bool inView = (gx >= 0 && gx < DISPLAY_WIDTH
+                        && vcount >= 0 && vcount < DISPLAY_HEIGHT);
+            if (!inView)
+            {
+                // Windows are a 240x160 concept. Applying WINOUT out here blanked
+                // every layer -- REG_WINOUT is commonly 0, meaning "show nothing
+                // outside the window" -- which is what produced the black band
+                // above the view. The extended area simply shows everything.
+                scanline.winMask[xpos] = WINMASK_BG0 | WINMASK_BG1 | WINMASK_BG2
+                                       | WINMASK_BG3 | WINMASK_OBJ | WINMASK_CLR;
+            }
+            else if (WIN0enable && winCheckHorizontalBounds(WIN0left, WIN0right, (u16)gx))
                 scanline.winMask[xpos] = REG_WININ & 0x3F;
-            //win1 checks
-            else if (WIN1enable && winCheckHorizontalBounds(WIN1left, WIN1right, xpos))
+            else if (WIN1enable && winCheckHorizontalBounds(WIN1left, WIN1right, (u16)gx))
                 scanline.winMask[xpos] = (REG_WININ >> 8) & 0x3F;
             else
                 scanline.winMask[xpos] = (REG_WINOUT & 0x3F) | WINMASK_WINOUT;
@@ -2574,7 +2665,7 @@ static void DrawScanline(uint16_t *pixels, uint16_t vcount)
         DrawSpritesWinMask(&scanline, vcount);
     
     //init bgmask for alpha blending
-    for (int i = 0; i < DISPLAY_WIDTH; i++)
+    for (int i = 0; i < gRenderWidth; i++)
     {
         scanline.bgMask[i] = 0x20; //backdrop bit
     }
@@ -2706,10 +2797,16 @@ void DrawFrame(uint16_t *pixels)
     
     //memsetu16(pixels, *(uint16_t *)PLTT, DISPLAY_WIDTH * DISPLAY_HEIGHT);
 
-    for (i = 0; i < DISPLAY_HEIGHT; i++)
+    for (i = 0; i < gRenderHeight; i++)
     {
-        REG_VCOUNT = i;
-        if(((REG_DISPSTAT >> 8) & 0xFF) == REG_VCOUNT)
+        // Rows outside the vanilla view still draw, but must not raise VCOUNT
+        // or HBlank: those fire exactly DISPLAY_HEIGHT times per frame and the
+        // game's timing depends on it.
+        int gbaLine = i - gRenderOffsetY;
+        bool32 realLine = (gbaLine >= 0 && gbaLine < DISPLAY_HEIGHT);
+        if (realLine)
+            REG_VCOUNT = gbaLine;
+        if(realLine && ((REG_DISPSTAT >> 8) & 0xFF) == REG_VCOUNT)
         {
             REG_DISPSTAT |= INTR_FLAG_VCOUNT;
             if(REG_DISPSTAT & DISPSTAT_VCOUNT_INTR)
@@ -2732,9 +2829,12 @@ void DrawFrame(uint16_t *pixels)
             }
         }
         
-        memsetu16(&pixels[i*DISPLAY_WIDTH], backdropColor, DISPLAY_WIDTH);
-        DrawScanline(&pixels[i*DISPLAY_WIDTH], i);
+        memsetu16(&pixels[i*gRenderWidth], backdropColor, gRenderWidth);
+        DrawScanline(&pixels[i*gRenderWidth], gbaLine);
         
+        if (!realLine)
+            continue;
+
         REG_DISPSTAT |= INTR_FLAG_HBLANK;
 
         RunDMAs(DMA_HBLANK);

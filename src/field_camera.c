@@ -4,6 +4,7 @@
 #include "field_camera.h"
 #include "field_player_avatar.h"
 #include "fieldmap.h"
+#include "platform/framedraw.h"
 #include "event_object_movement.h"
 #include "gpu_regs.h"
 #include "menu.h"
@@ -23,11 +24,11 @@ struct FieldCameraOffset
     bool8 copyBGToVRAM;
 };
 
+static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *, s32, s32);
 static void RedrawMapSliceNorth(struct FieldCameraOffset *, const struct MapLayout *);
 static void RedrawMapSliceSouth(struct FieldCameraOffset *, const struct MapLayout *);
 static void RedrawMapSliceEast(struct FieldCameraOffset *, const struct MapLayout *);
 static void RedrawMapSliceWest(struct FieldCameraOffset *, const struct MapLayout *);
-static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *, s32, s32);
 static void DrawWholeMapViewInternal(int, int, const struct MapLayout *);
 static void DrawMetatileAt(const struct MapLayout *, u16, int, int);
 static void DrawMetatile(s32, const u16 *, u16);
@@ -42,6 +43,24 @@ static void (*sFieldCameraPanningCallback)(void);
 COMMON_DATA struct CameraObject gFieldCamera = {0};
 COMMON_DATA u16 gTotalCameraPixelOffsetY = 0;
 COMMON_DATA u16 gTotalCameraPixelOffsetX = 0;
+
+// The field draws a 16x16 metatile (256x256px) window of map and scrolls to
+// yPixelOffset + 8 within it. Measured, the screen sits 24..56px down that
+// window: yTileOffset jumps a whole metatile at each crossing while
+// yPixelOffset accumulates per frame, so the two run up to 32px out of phase
+// and which way depends on the direction of travel. That leaves 24px of real
+// map guaranteed above the screen and 40px below.
+//
+// FIELD_PAD_Y_MT can shift the window to move slack from one side to the
+// other, but it cannot create any: the 96px of total slack minus 32px of
+// phase jitter leaves 64px, and every whole-metatile shift lands on a 24px
+// worst case. It is kept at 0 (identical to vanilla) and stays here because a
+// taller BG would make it useful again.
+#define FIELD_PAD_Y_MT 0
+#define FIELD_PAD_Y    (FIELD_PAD_Y_MT * 16)
+
+#define FIELD_ORIGIN_X (gSaveBlock1Ptr->pos.x)
+#define FIELD_ORIGIN_Y (gSaveBlock1Ptr->pos.y - FIELD_PAD_Y_MT)
 
 static void ResetCameraOffset(struct FieldCameraOffset *cameraOffset)
 {
@@ -75,7 +94,7 @@ void FieldUpdateBgTilemapScroll(void)
 {
     u32 r4, r5;
     r5 = sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan;
-    r4 = sVerticalCameraPan + sFieldCameraOffset.yPixelOffset + 8;
+    r4 = sVerticalCameraPan + sFieldCameraOffset.yPixelOffset + 8 + FIELD_PAD_Y;
 
     SetGpuReg(REG_OFFSET_BG1HOFS, r5);
     SetGpuReg(REG_OFFSET_BG1VOFS, r4);
@@ -93,7 +112,7 @@ void GetCameraOffsetWithPan(s16 *x, s16 *y)
 
 void DrawWholeMapView(void)
 {
-    DrawWholeMapViewInternal(gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y, gMapHeader.mapLayout);
+    DrawWholeMapViewInternal(FIELD_ORIGIN_X, FIELD_ORIGIN_Y, gMapHeader.mapLayout);
     sFieldCameraOffset.copyBGToVRAM = TRUE;
 }
 
@@ -124,6 +143,14 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
 {
     const struct MapLayout *mapLayout = gMapHeader.mapLayout;
 
+    // Only the edge slice that scrolled in is redrawn, which leaves the ring's
+    // outermost row/column holding the one that just scrolled off. That is not
+    // an oversight to fix: yTileOffset/xTileOffset jump a whole metatile at the
+    // crossing while the pixel offset only catches up at the end of
+    // CameraUpdate, so for that one frame the ring's far edge is displayed at
+    // the NEAR edge of the screen -- and the scrolled-off row/column is exactly
+    // what belongs there. Redrawing the whole window instead makes the far side
+    // of the map flash on the near side for a frame.
     if (x > 0)
         RedrawMapSliceWest(cameraOffset, mapLayout);
     if (x < 0)
@@ -150,7 +177,7 @@ static void RedrawMapSliceNorth(struct FieldCameraOffset *cameraOffset, const st
         temp = cameraOffset->xTileOffset + i;
         if (temp >= 32)
             temp -= 32;
-        DrawMetatileAt(mapLayout, r7 + temp, gSaveBlock1Ptr->pos.x + i / 2, gSaveBlock1Ptr->pos.y + 14);
+        DrawMetatileAt(mapLayout, r7 + temp, FIELD_ORIGIN_X + i / 2, FIELD_ORIGIN_Y + 14);
     }
 }
 
@@ -165,7 +192,7 @@ static void RedrawMapSliceSouth(struct FieldCameraOffset *cameraOffset, const st
         temp = cameraOffset->xTileOffset + i;
         if (temp >= 32)
             temp -= 32;
-        DrawMetatileAt(mapLayout, r7 + temp, gSaveBlock1Ptr->pos.x + i / 2, gSaveBlock1Ptr->pos.y);
+        DrawMetatileAt(mapLayout, r7 + temp, FIELD_ORIGIN_X + i / 2, FIELD_ORIGIN_Y);
     }
 }
 
@@ -180,7 +207,7 @@ static void RedrawMapSliceEast(struct FieldCameraOffset *cameraOffset, const str
         temp = cameraOffset->yTileOffset + i;
         if (temp >= 32)
             temp -= 32;
-        DrawMetatileAt(mapLayout, temp * 32 + r6, gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y + i / 2);
+        DrawMetatileAt(mapLayout, temp * 32 + r6, FIELD_ORIGIN_X, FIELD_ORIGIN_Y + i / 2);
     }
 }
 
@@ -197,7 +224,7 @@ static void RedrawMapSliceWest(struct FieldCameraOffset *cameraOffset, const str
         temp = cameraOffset->yTileOffset + i;
         if (temp >= 32)
             temp -= 32;
-        DrawMetatileAt(mapLayout, temp * 32 + r5, gSaveBlock1Ptr->pos.x + 14, gSaveBlock1Ptr->pos.y + i / 2);
+        DrawMetatileAt(mapLayout, temp * 32 + r5, FIELD_ORIGIN_X + 14, FIELD_ORIGIN_Y + i / 2);
     }
 }
 
@@ -319,7 +346,7 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
     if (x >= 32)
         x -= 32;
 
-    y = (y - gSaveBlock1Ptr->pos.y) * 2;
+    y = (y - FIELD_ORIGIN_Y) * 2;
     if (y >= 32 || y < 0)
         return -1;
     y = y + cameraOffset->yTileOffset;

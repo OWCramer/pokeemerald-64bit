@@ -1,5 +1,6 @@
 #include "global.h"
 #include "overworld.h"
+#include "platform/framedraw.h"
 #include "battle_pyramid.h"
 #include "battle_setup.h"
 #include "berry.h"
@@ -1410,6 +1411,7 @@ u8 GetCurrentMapBattleScene(void)
 static void InitOverworldBgs(void)
 {
     InitBgsFromTemplates(0, sOverworldBgTemplates, ARRAY_COUNT(sOverworldBgTemplates));
+    SetRenderExpansionAllowed(TRUE);
     SetBgAttribute(1, BG_ATTR_MOSAIC, 1);
     SetBgAttribute(2, BG_ATTR_MOSAIC, 1);
     SetBgAttribute(3, BG_ATTR_MOSAIC, 1);
