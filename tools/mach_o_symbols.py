@@ -39,6 +39,8 @@ SET_DEF = re.compile(r'^\s*\.(?:set|equ|equiv)\s+([A-Za-z_][A-Za-z0-9_]*)')
 GLOBL_DIR = re.compile(r'^\s*\.glob(?:a)?l\s+([A-Za-z_][A-Za-z0-9_]*)\s*$')
 # Pointer-sized operands are where cross-language symbol references live.
 PTR_OPERAND = re.compile(r'^(\s*\.(?:quad|long|int)\s+)(.+?)(\s*(?:/\*.*)?)$')
+# `_foo = foo`, the Mach-O alias form emitted by emit_alias below.
+ALIAS_ASSIGN = re.compile(r'^\s*_[A-Za-z0-9_]+\s*=\s*[A-Za-z_][A-Za-z0-9_]*\s*$')
 # Negative lookbehind for '\' leaves macro parameter references (\script) alone;
 # for '.' leaves local labels (.Lfoo) and directives alone.
 IDENT = re.compile(r'(?<![\\\w.])([A-Za-z_][A-Za-z0-9_]*)\b')
@@ -130,6 +132,23 @@ def main():
     out = []
     aliased = set()
     prev_was_byte = False
+    # Index in `out` where the current labeled block's label group begins, and
+    # whether that block has already been 8-aligned. A struct whose *base* is
+    # only 4-aligned puts every pointer after a leading non-pointer field at the
+    # wrong offset -- struct MapConnections is `s32 count` then a pointer, so C
+    # reads the pointer at offset 8 while the assembler had emitted it at 4.
+    block_start = None
+    block_aligned = False
+
+    def tail_is_label_group():
+        for prev in reversed(out):
+            stripped_prev = prev.strip()
+            if not stripped_prev:
+                continue
+            return bool(stripped_prev.startswith('.globl ')
+                        or LABEL_DEF.match(prev)
+                        or ALIAS_ASSIGN.match(prev))
+        return False
 
     def emit_alias(name):
         if name in aliased:
@@ -144,6 +163,8 @@ def main():
         m = GLOBL_COMMENT.match(line)
         if m and m.group(2) == m.group(3):
             indent, label = m.group(1), m.group(2)
+            if not tail_is_label_group():
+                block_start, block_aligned = len(out), False
             # 'L'-prefixed labels cannot be exported under their own name, but
             # the '_L...' alias can be -- and keeping the bare definition means
             # macro-constructed references like \name\()_Blockdata still
@@ -166,6 +187,25 @@ def main():
             # relocated 8-byte pointer would need 8-byte alignment that a packed
             # instruction stream cannot provide.
             if m.group(1).lstrip().startswith('.quad'):
+                # Two separate alignments are needed, and both matter:
+                #
+                # 1. The enclosing struct's base, so fields land where C expects.
+                #    Without it MapConnections put its pointer at offset 4 while
+                #    C read offset 8.
+                # 2. The pointer field itself, since ld rejects a relocated
+                #    8-byte pointer that is not 8-byte aligned.
+                #
+                # (1) must go *ahead* of the labels naming the struct, not
+                # between them and the data -- putting it after left the label 4
+                # bytes below its own first field, so struct MapHeader read
+                # layout=0x04cd3880_00000000: four bytes of padding followed by
+                # the low half of the real pointer. That crashed the first
+                # overworld load.
+                #
+                # Both are no-ops wherever the data is already aligned.
+                if block_start is not None and not block_aligned:
+                    out.insert(block_start, '\t.balign 8\n')
+                    block_aligned = True
                 out.append('\t.balign 8\n')
             out.append(m.group(1) + outside_strings(m.group(2), ptr_sub) + m.group(3) + '\n')
             prev_was_byte = False
@@ -173,6 +213,8 @@ def main():
 
         m = LABEL_DEF.match(line)
         if m:
+            if not tail_is_label_group():
+                block_start, block_aligned = len(out), False
             out.append(line if line.endswith('\n') else line + '\n')
             emit_alias(m.group(1))
             continue
