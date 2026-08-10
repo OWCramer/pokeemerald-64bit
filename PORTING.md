@@ -326,6 +326,48 @@ Verified by probing the rebased pointer at the crash site: `sprite=0x105d9aa08`,
 inside `gSprites` at offset 96. The truncated value would have been
 `0x05d9aa08` -- the leading `0x1` is exactly what was being lost.
 
+## The 32-bit pointer classes, and how each was found
+
+Everything above the SDL layer keeps producing the same shape of bug: the GBA
+stored a pointer in 32 bits, and this codebase does that through many different
+idioms, so each needs its own search to find. Six distinct ones so far:
+
+| idiom | where | how it failed |
+|---|---|---|
+| `(u32)ptr >> 16` into two `s16` slots | ~20 sites | wild pointer in `Task_HandleMonAnimation` |
+| `Set/GetWordTaskArg` (same split, behind a helper) | 13 sites | `Free` of a truncated buffer, wall clock |
+| raw `T1/T2_READ_32` cast to a pointer | `battle_anim.c` x3 | would crash on the first battle animation |
+| `FieldEffectScript_ReadWord` cast to a pointer | `field_effect.c` x4 | `callnative` jumped to `0xffa60bf6` |
+| `SetU32` into a `u8 *` | `battle_setup.c` | no rebase *and* only 4 of 8 bytes written |
+| `SCRIPT_REBASE` evaluating its argument twice | `include/global.h` | every script pointer operand read 8 bytes |
+
+**The diagnostic tell is the faulting address.** A wild address that looks like a
+small offset (`0x203edf8`, `0x1800d21`) rather than a real image address
+(`0x1xxxxxxxx`) means a truncated or unrebased pointer, and the crashing frame
+names the idiom. That turns each of these from an investigation into a lookup.
+
+Roughly twenty other raw 32-bit reads in the tree are genuine values -- `status`,
+`flags`, `otId` -- and must be left alone, so a blanket rewrite is not an option;
+each site has to be classified.
+
+### The one that was not a pointer bug
+
+`MapHeaderCheckScriptTable` always returned NULL, so no map ran its
+`ON_FRAME_TABLE` scripts and the Littleroot intro never started. The data was
+perfect -- every byte of the table verified against `nm`. The cause was that
+`gScriptBase` is defined as `const u8 gScriptBase[1] = {0}` in `src/script.c`,
+so *within that file* the compiler can see the whole object, knows every rebased
+address is outside a one-byte array, and treats reads through it as undefined.
+It folded them to the array's known zero and deleted the loop body as dead code.
+
+The tell: a `printf` probe compiled but did not appear in the object file. When
+instrumentation vanishes, the compiler has proved the code unreachable -- that
+is a finding, not a broken probe.
+
+`ScriptRebase` now launders the anchor through an empty `asm` barrier. Anything
+else that both defines and dereferences an undersized anchor array will hit this
+same trap.
+
 ## The SDL3 target
 
 `make native3` builds `./pokeemerald-sdl3` against SDL3 from
