@@ -91,6 +91,7 @@ gSpecialVars::
 
 	.purgem def_special
 	.set ALLOCATE_SPECIAL_TABLE, 1
+	.include "constants/tms_hms_flat.inc"
 	.include "data/specials.inc"
 
 gStdScripts::

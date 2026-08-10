@@ -6,8 +6,18 @@ REVISION    := 0
 MODERN      ?= 0
 KEEP_TEMPS  ?= 0
 PORTABLE    ?= 1
+# Build a native 64-bit host binary with clang (macOS/arm64) instead of
+# cross-compiling a 32-bit Windows exe with mingw-gcc.
+NATIVE64    ?= 0
 TARGET_PLATFORM := PLATFORM_SDL2
 TILE_RENDERER   := RENDERER_FAST_DRAW
+
+ifneq (,$(filter native,$(MAKECMDGOALS)))
+  NATIVE64 := 1
+endif
+ifeq ($(NATIVE64),1)
+  PORTABLE := 1
+endif
 
 # `File name`.gba ('_modern' will be appended to the modern builds)
 FILE_NAME := pokeemerald
@@ -49,7 +59,9 @@ ifneq (,$(TOOLCHAIN))
   endif
 endif
 
-ifeq ($(PORTABLE),1)
+ifeq ($(NATIVE64),1)
+  PREFIX :=
+else ifeq ($(PORTABLE),1)
   PREFIX := i686-w64-mingw32-
 else
   PREFIX := arm-none-eabi-
@@ -65,7 +77,43 @@ ifeq ($(OS),Windows_NT)
   EXE := .exe
 endif
 
-ifeq ($(PORTABLE),1)
+ifeq ($(NATIVE64),1)
+  # Native 64-bit host build. Pointers are 8 bytes, so every pointer-sized
+  # pseudo-op in the hand-written data scripts has to widen to .quad.
+  # sdl2-config points at .../include/SDL2, but the sources use <SDL2/SDL.h>,
+  # so the parent include dir has to be on the search path too.
+  SDL_CFLAGS := $(shell sdl2-config --cflags) $(foreach d,$(shell sdl2-config --cflags),$(if $(filter -I%,$d),-I$(patsubst -I%,%,$d)/..))
+  SDL_LDFLAGS := $(shell sdl2-config --libs)
+  # Widen pointer-sized pseudo-ops, retarget ELF sections at Mach-O, and drop
+  # '@' line comments (clang's arm64 assembler does not accept them).
+  ASM_PSEUDO_OP_CONV := sed \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - _gScriptBase)/' \
+	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
+	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
+	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
+	-e 's/\.section script_data, "aw"/.section __DATA,__const/' \
+	-e 's/\.section \.rodata/.section __DATA,__const/' \
+	-e 's/[[:space:]][[:space:]]*@[^"]*$$//;s/^@.*//' \
+	-e '/^[[:space:]]*\.size[[:space:]]/d' \
+	-e 's/^\([[:space:]]*\)\.align[[:space:]]\{1,\}2[[:space:]]*$$/\1.balign 8/'
+  # Emits _name aliases for defined labels and prefixes external references.
+  # Inline .include'd data before filtering; the assembler would otherwise
+  # resolve them itself and the generated map/layout/header files would
+  # never see the pointer-widening or alignment rewrites.
+  EXPAND_INC := | python3 tools/expand_includes.py -I . -I sound
+  MACHO_SYMS := | python3 tools/mach_o_symbols.py
+  # Emulates GNU as --defsym, which clang's integrated assembler lacks.
+  # STR_VAR_1..3 are charmap entries, not constants. Passed as macro arguments
+  # they arrive as literal text, so `.if STR_VAR_1 == STR_VAR_1` compares an
+  # undefined symbol to itself. GNU as folds X-X to 0; clang requires an
+  # absolute. Give them their charmap byte pairs as values -- distinct, and
+  # above the 0..255 range the macro's .else branch emits directly.
+  ASM_DEFSYMS := printf '\t.set PORTABLE_ASM, 1\n\t.set PORTABLE, 1\n\t.set MODERN, 1\n\t.set UBFIX, 1\n\t.set STR_VAR_1, 0xFD02\n\t.set STR_VAR_2, 0xFD03\n\t.set STR_VAR_3, 0xFD04\n';
+  FIX_UNDERSCORE := true
+  PLATFORM_INCLUDES :=
+  # clang's integrated assembler replaces GNU as.
+  AS := clang
+else ifeq ($(PORTABLE),1)
   SDL_DIR := /home/pokeemerald/SDL2-2.0.14/i686-w64-mingw32
   ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/\.int/g;s/\.2byte/\.short/g'
   #FIX_UNDERSCORE is required for 32 bit windows
@@ -100,7 +148,9 @@ endif
 # we can't unconditionally use arm-none-eabi-cpp
 # as installations which install binutils-arm-none-eabi
 # don't come with it
-ifneq ($(MODERN),1)
+ifeq ($(NATIVE64),1)
+  CPP := clang -E
+else ifneq ($(MODERN),1)
   ifeq ($(shell uname -s),Darwin)
     CPP := $(PREFIX)cpp
   else
@@ -115,8 +165,13 @@ ROM_NAME := $(FILE_NAME).gba
 OBJ_DIR_NAME := $(BUILD_DIR)/emerald
 MODERN_ROM_NAME := $(FILE_NAME)_modern.gba
 MODERN_OBJ_DIR_NAME := $(BUILD_DIR)/modern
+ifeq ($(NATIVE64),1)
+PORTABLE_ROM_NAME := $(FILE_NAME)
+PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/native
+else
 PORTABLE_ROM_NAME := $(FILE_NAME).exe
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/pc
+endif
 ASSETS_DIR_NAME := $(BUILD_DIR)/assets
 
 ELF_NAME := $(ROM_NAME:.gba=.elf)
@@ -154,7 +209,12 @@ MID_BUILDDIR = $(OBJ_DIR)/$(MID_SUBDIR)
 SHELL := bash -o pipefail
 
 # Set flags for tools
-ifeq ($(PORTABLE),1)
+ifeq ($(NATIVE64),1)
+  # Symbols normally passed via --defsym are injected as .set lines instead.
+  # The scriptptr helper adds a nesting level on top of already-deep map/script
+  # macro chains, past clang's default limit of 20.
+  ASFLAGS := -arch arm64 -x assembler -c -Xclang -asm-macro-max-nesting-depth=200
+else ifeq ($(PORTABLE),1)
   ASFLAGS := --32 --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1
 else
   ASFLAGS := -mcpu=arm7tdmi --defsym MODERN=$(MODERN)
@@ -172,6 +232,15 @@ ifeq ($(MODERN),0)
   override CFLAGS += -mthumb-interwork -Wimplicit -Wparentheses -Werror -O$(O_LEVEL) -fhex-asm -g
   LIBPATH := -L ../../tools/agbcc/lib
   LIB := $(LIBPATH) -lgcc -lc -L../../libagbsyscall -lagbsyscall
+else ifeq ($(NATIVE64),1)
+  CPPFLAGS += -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D UBFIX -D NATIVE_BUILD $(SDL_CFLAGS)
+  MODERNCC := clang
+  PATH_MODERNCC := $(MODERNCC)
+  # clang compiles the preprocessed C directly; there is no cc1/as split.
+  CC1 := clang
+  override CFLAGS += -Wno-trigraphs -Wparentheses -std=gnu99 -fno-builtin -Wno-unused-function \
+                     -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN) $(SDL_CFLAGS)
+  LIB :=
 else ifeq ($(PORTABLE),1)
   CPPFLAGS += -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D UBFIX -I$(SDL_DIR)/include -L$(SDL_DIR)/lib
   MODERNCC := $(PREFIX)gcc
@@ -197,7 +266,29 @@ ifeq ($(PORTABLE),1)
   ifeq ($(DINFO),1)
     override CFLAGS += -O0
   else
-    override CFLAGS += -O3
+    # The MP2K mixer segfaults intermittently at every optimisation level,
+    # including -O0, so the level is not the trigger. Run with EMERALD_NO_AUDIO=1
+    # for a stable game while that is chased. See PORTING notes.
+    NATIVE_OPT ?= 3
+    override CFLAGS += -O$(NATIVE_OPT)
+  endif
+  # Diagnostic switches apply at any optimisation level, including DINFO=1.
+  # NOTE: -D defines must reach CPPFLAGS. The build preprocesses with CPPFLAGS
+  # and only then compiles the result with CFLAGS, so a define added to CFLAGS
+  # alone is evaluated too late and every #ifdef silently stays false.
+  ifeq ($(AUDIT),1)
+    CPPFLAGS += -DAUDIO_AUDIT
+    override CFLAGS += -DAUDIO_AUDIT -g
+  endif
+  ifeq ($(MEMGUARD),1)
+    CPPFLAGS += -DEMULATED_MEM_GUARDS
+    override CFLAGS += -DEMULATED_MEM_GUARDS
+  endif
+  ifeq ($(ASAN),1)
+    override CFLAGS += -fsanitize=address -fno-omit-frame-pointer -g
+  endif
+  ifeq ($(UBSAN),1)
+    override CFLAGS += -fsanitize=undefined -fno-omit-frame-pointer -g
   endif
 endif
 
@@ -228,7 +319,7 @@ MAKEFLAGS += --no-print-directory
 .DELETE_ON_ERROR:
 
 RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidynonmodern generated clean-generated
-.PHONY: all rom modern compare gba
+.PHONY: all rom modern compare gba native
 .PHONY: $(RULES_NO_SCAN)
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
@@ -293,6 +384,7 @@ $(shell mkdir -p $(SUBDIRS))
 modern: all
 compare: all
 gba: all
+native: all
 
 # Other rules
 rom: $(ROM)
@@ -384,7 +476,10 @@ endif
 # It doesn't look like $(shell) can be deferred so there might not be a better way (Icedude_907: there is soon).
 
 $(C_BUILDDIR)/%.o: $(C_SUBDIR)/%.c
-ifneq ($(KEEP_TEMPS),1)
+ifeq ($(NATIVE64),1)
+	@echo "clang <flags> -o $@ $<"
+	@$(CPP) $(CPPFLAGS) $< | $(PREPROC) -i -g $(ASSETS_DIR_NAME) $< charmap.txt | $(CC1) $(CFLAGS) -c -x c - -o $@
+else ifneq ($(KEEP_TEMPS),1)
 	@echo "$(CC1) <flags> -o $@ $<"
 	@$(CPP) $(CPPFLAGS) $< | $(PREPROC) -i -g $(ASSETS_DIR_NAME) $< charmap.txt | $(CC1) $(CFLAGS) -o - - | cat - <(echo -e ".text\n\t.align\t2, 0") | $(AS) $(ASFLAGS) -o $@ -
 else
@@ -422,9 +517,14 @@ ifneq ($(NODEP),1)
 -include $(addprefix $(OBJ_DIR)/,$(C_ASM_SRCS:.s=.d))
 endif
 
+ifeq ($(NATIVE64),1)
+$(DATA_ASM_BUILDDIR)/%.o: $(DATA_ASM_SUBDIR)/%.s
+	{ $(ASM_DEFSYMS) $(PREPROC) $< charmap.txt | $(CPP) $(INCLUDE_SCANINC_ARGS) - | $(PREPROC) -ie $< charmap.txt; } $(EXPAND_INC) | $(ASM_PSEUDO_OP_CONV) $(MACHO_SYMS) | $(AS) $(ASFLAGS) -o $@ -
+else
 $(DATA_ASM_BUILDDIR)/%.o: $(DATA_ASM_SUBDIR)/%.s
 	$(PREPROC) $< charmap.txt | $(CPP) $(INCLUDE_SCANINC_ARGS) - | $(PREPROC) -ie $< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS) $(ASFLAGS) -o $@
 	$(FIX_UNDERSCORE) $@
+endif
 
 $(DATA_ASM_BUILDDIR)/%.d: $(DATA_ASM_SUBDIR)/%.s
 	$(SCANINC) -M $@ -g $(ASSETS_DIR_NAME) $(INCLUDE_SCANINC_ARGS) -I "" $<
@@ -473,6 +573,12 @@ $(ROM): $(ELF)
 $(SYM): $(ELF)
 	$(OBJDUMP) -t $< | sort -u | grep -E "^0[2389]" | $(PERL) -p -e 's/^(\w{8}) (\w).{6} \S+\t(\w{8}) (\S+)$$/\1 \2 \3 \4/g' > $@
 else
+ifeq ($(NATIVE64),1)
+$(ROM): $(OBJS)
+	@bash tools/gen_macho_aliases.sh $(OBJ_DIR)/macho_aliases.txt $^
+	$(MODERNCC) $(CFLAGS) $^ $(SDL_LDFLAGS) -Wl,-alias_list,$(OBJ_DIR)/macho_aliases.txt -o $@
+else
 $(ROM): $(OBJS)
 	$(MODERNCC) $(CFLAGS) -Wl,--demangle $^ -static-libgcc -L$(SDL_DIR)/lib $(PLATFORM_INCLUDES) -lwinmm -lxinput -o $@
+endif
 endif

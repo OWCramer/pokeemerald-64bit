@@ -1,6 +1,9 @@
 #include "global.h"
 #include "gba/m4a_internal.h"
 
+// Implemented in sound_mixer.c, which has no header.
+void RunMixerFrame(void);
+
 #ifdef PORTABLE
     #include "cgb_audio.h"
 #endif
@@ -128,12 +131,82 @@ void m4aSoundInit(void)
     }
 }
 
+
+#ifdef AUDIO_AUDIT
+// Walks every music player's tracks and reports the first cmdPtr that leaves the
+// plausible range around gScriptBase. Called either side of RunMixerFrame so the
+// corrupting side is identifiable: "pre" means the game thread did it between
+// frames, "post" means the mixer did it.
+#define AUDIT_SPAN (256L * 1024 * 1024)
+static int AuditPtrBad(const u8 *p)
+{
+    long d;
+    if (p == NULL) return 0;
+    d = (long)((const char *)p - (const char *)gScriptBase);
+    return d > AUDIT_SPAN || d < -AUDIT_SPAN;
+}
+
+void M4aAudit(const char *where)
+{
+    extern int printf(const char *, ...);
+    static int tripped;
+    static long frame;
+    struct MusicPlayerInfo *players[NUM_MUSIC_PLAYERS + MAX_POKEMON_CRIES];
+    int n = 0, i, t;
+
+    if (tripped) return;
+    for (i = 0; i < NUM_MUSIC_PLAYERS; i++) players[n++] = gMPlayTable[i].info;
+    for (i = 0; i < MAX_POKEMON_CRIES; i++) players[n++] = &gPokemonCryMusicPlayers[i];
+
+    for (i = 0; i < n; i++)
+    {
+        struct MusicPlayerInfo *mp = players[i];
+        if (mp == NULL || mp->tracks == NULL) continue;
+        if (AuditPtrBad((const u8 *)mp->tracks))
+        {
+            printf("AUDIT %s frame=%ld player=%d BAD tracks=%p\n", where, frame, i, (void *)mp->tracks);
+            tripped = 1; return;
+        }
+        for (t = 0; t < mp->trackCount; t++)
+        {
+            struct MusicPlayerTrack *tr = &mp->tracks[t];
+            if (!(tr->flags & MPT_FLG_EXIST)) continue;
+            if (AuditPtrBad(tr->cmdPtr))
+            {
+                printf("AUDIT %s frame=%ld player=%d track=%d/%d cmdPtr=%p "
+                       "flags=%02x patternLevel=%u\n",
+                       where, frame, i, t, mp->trackCount, (void *)tr->cmdPtr,
+                       tr->flags, tr->patternLevel);
+                tripped = 1; return;
+            }
+        }
+    }
+    if (where[0] == 'p' && where[1] == 'o') frame++;   // count once per frame
+}
+#endif
+
 void m4aSoundMain(void)
 {
 #ifndef PORTABLE
     SoundMain();
 #else
+#ifdef NATIVE_BUILD
+    // Escape hatch while the 64-bit audio data layout is still being validated:
+    // set EMERALD_NO_AUDIO=1 to run the game with the mixer disabled.
+    {
+        extern char *getenv(const char *);
+        static int checked, disabled;
+        if (!checked) { checked = 1; disabled = getenv("EMERALD_NO_AUDIO") != NULL; }
+        if (disabled) return;
+    }
+#endif
+#ifdef AUDIO_AUDIT
+    M4aAudit("pre");
+#endif
     RunMixerFrame();
+#ifdef AUDIO_AUDIT
+    M4aAudit("post");
+#endif
 #endif
 }
 
@@ -673,8 +746,10 @@ void MPlayOpen(struct MusicPlayerInfo *mplayInfo, struct MusicPlayerTrack *track
     soundInfo->musicPlayerHead = mplayInfo;
     soundInfo->MPlayMainHead = MPlayMain;
 #else
-    soundInfo->musicPlayerHead = (u32)mplayInfo;
-    soundInfo->MPlayMainHead = (u32)MP2KPlayerMain;
+    // These fields are real pointers in the portable build; the u32 casts
+    // truncate on a 64-bit host.
+    soundInfo->musicPlayerHead = mplayInfo;
+    soundInfo->MPlayMainHead = MP2KPlayerMain;
 #endif
     soundInfo->ident = ID_NUMBER;
     mplayInfo->ident = ID_NUMBER;
@@ -1779,7 +1854,8 @@ start_song:
     gPokemonCrySongs[i].tone = tone;
     gPokemonCrySongs[i].part[0] = &gPokemonCrySongs[i].part0;
     gPokemonCrySongs[i].part[1] = &gPokemonCrySongs[i].part1;
-    gPokemonCrySongs[i].gotoTarget = (u32)&gPokemonCrySongs[i].cont;
+    gPokemonCrySongs[i].gotoTarget =
+        (u32)(s32)((const u8 *)&gPokemonCrySongs[i].cont - gScriptBase);
 
     mplayInfo->ident = ID_NUMBER;
 

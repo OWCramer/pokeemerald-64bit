@@ -11,12 +11,19 @@ SPECIAL_OUTDIRS += $(SOUND_BIN_DIR) $(SOUND_BIN_DIR)/direct_sound_samples/phonem
 $(shell mkdir -p $(SPECIAL_OUTDIRS) )
 
 # Assembly song compilation
+ifeq ($(NATIVE64),1)
+$(SONG_BUILDDIR)/%.o: $(SONG_SUBDIR)/%.s
+	{ $(ASM_DEFSYMS) cat $<; } $(EXPAND_INC) | $(ASM_PSEUDO_OP_CONV) $(MACHO_SYMS) | $(AS) $(ASFLAGS) -I sound -o $@ -
+$(MID_BUILDDIR)/%.o: $(MID_ASM_DIR)/%.s
+	{ $(ASM_DEFSYMS) cat $<; } $(EXPAND_INC) | $(ASM_PSEUDO_OP_CONV) $(MACHO_SYMS) | $(AS) $(ASFLAGS) -I sound -o $@ -
+else
 $(SONG_BUILDDIR)/%.o: $(SONG_SUBDIR)/%.s
 	$(ASM_PSEUDO_OP_CONV) $< | $(AS) $(ASFLAGS) -I sound -o $@
 	$(FIX_UNDERSCORE) $@
 $(MID_BUILDDIR)/%.o: $(MID_ASM_DIR)/%.s
 	$(ASM_PSEUDO_OP_CONV) $< | $(AS) $(ASFLAGS) -I sound -o $@
 	$(FIX_UNDERSCORE) $@
+endif
 
 # Compressed cries
 $(CRY_BIN_DIR)/%.bin: $(CRY_SUBDIR)/%.wav

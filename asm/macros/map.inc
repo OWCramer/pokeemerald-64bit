@@ -11,16 +11,37 @@
 	.endm
 
 	/* Defines a map script. 'type' is any MAP_SCRIPT_* constant (see include/constants/map_scripts.h)*/
+	/* mapScripts is a raw byte stream walked with a hardcoded stride of 5
+	   (see MapHeaderGetScriptTable), so the pointer stays 4 bytes wide and
+	   holds an anchor-relative offset instead. */
 	.macro map_script type:req, script:req
 	.byte \type
+	.ifdef PORTABLE_ASM
+	.ifc \script, NULL
+	.long 0
+	.else
+	.long (\script - _gScriptBase)
+	.endif
+	.else
 	.int \script
+	.endif
 	.endm
 
 	/* Defines an entry in a map script table (for either ON_WARP_INTO_MAP_TABLE or ON_FRAME_TABLE)*/
+	/* Also a raw stream: MapHeaderCheckScriptTable walks it with ptr += 2,
+	   ptr += 2, ptr += 4. Keep 4 bytes; store an anchor-relative offset. */
 	.macro map_script_2 var:req, compare:req, script:req
 	.short \var
 	.short \compare
+	.ifdef PORTABLE_ASM
+	.ifc \script, NULL
+	.long 0
+	.else
+	.long (\script - _gScriptBase)
+	.endif
+	.else
 	.int \script
+	.endif
 	.endm
 
 	/* Defines an object event template for map data, to be used by a normal object. Mirrors the struct layout of ObjectEventTemplate in include/global.fieldmap.h*/
@@ -36,9 +57,17 @@
 	.space 1  /* Padding*/
 	.short \trainer_type
 	.short \sight_radius_tree_etc
+	/* ObjectEventTemplate is a real C struct: 24 bytes on GBA, 32 on a 64-bit
+	   host with script at offset 16 and flagId at 24. */
+	.ifdef PORTABLE_ASM
+	.quad \script
+	.short \event_flag
+	.space 6  /* Padding to sizeof == 32*/
+	.else
 	.int \script
 	.short \event_flag
 	.space 2  /* Padding*/
+	.endif
 	inc _num_npcs
 	.endm
 
@@ -54,7 +83,12 @@
 	.space 3  /* Padding*/
 	.2byte \target_map_id & 0xFF  /* map num*/
 	.2byte \target_map_id >> 8    /* map group*/
+	/* Shares ObjectEventTemplate's layout: 24 bytes on GBA, 32 on a 64-bit host. */
+	.ifdef PORTABLE_ASM
+	.space 16 /* Padding*/
+	.else
 	.space 8  /* Padding*/
+	.endif
 	inc _num_npcs
 	.endm
 
@@ -75,8 +109,14 @@
 	.space 1  /* Padding*/
 	.2byte \var
 	.2byte \varValue
+	/* CoordEvent: 16 bytes on GBA, 24 on a 64-bit host with script at 16. */
+	.ifdef PORTABLE_ASM
+	.space 6  /* Padding*/
+	.quad \script
+	.else
 	.space 2  /* Padding*/
 	.4byte \script
+	.endif
 	inc _num_traps
 	.endm
 
@@ -93,11 +133,19 @@
 	.byte \elevation
 	.byte \kind
 	.space 2  /* Padding*/
+	/* BgEvent: 12 bytes on GBA, 16 on a 64-bit host with bgUnion at 8. */
 	.if \kind != BG_EVENT_HIDDEN_ITEM
+		.ifdef PORTABLE_ASM
+		.quad \arg6
+		.else
 		.int \arg6
+		.endif
 	.else
 		.short \arg6
 		.short \arg7
+		.ifdef PORTABLE_ASM
+		.space 4  /* Padding to sizeof == 16*/
+		.endif
 	.endif
 	inc _num_signs
 	.endm
@@ -123,7 +171,17 @@
 	/* Defines the table of event data for a map. Mirrors the struct layout of MapEvents in include/global.fieldmap.h*/
 	.macro map_events npcs:req, warps:req, traps:req, signs:req
 	.byte _num_npcs, _num_warps, _num_traps, _num_signs
+	/* MapEvents: 20 bytes on GBA, 40 on a 64-bit host -- the four counts are
+	   followed by padding to 8 before the first pointer. */
+	.ifdef PORTABLE_ASM
+	.space 4  /* Padding*/
+	.quad \npcs
+	.quad \warps
+	.quad \traps
+	.quad \signs
+	.else
 	.int \npcs, \warps, \traps, \signs
+	.endif
 	reset_map_events
 	.endm
 

@@ -15,7 +15,7 @@
 
 	.align 2
 gContestAI_ScriptsTable::
-	.int AI_CheckBadMove      /* CONTEST_AI_CHECK_BAD_MOVE*/
+	.int ContestAI_CheckBadMove      /* CONTEST_AI_CHECK_BAD_MOVE*/
 	.int AI_CheckCombo        /* CONTEST_AI_CHECK_COMBO*/
 	.int AI_CheckBoring       /* CONTEST_AI_CHECK_BORING*/
 	.int AI_CheckExcitement   /* CONTEST_AI_CHECK_EXCITEMENT*/
@@ -661,7 +661,7 @@ AI_Erratic_End:
 	end
 
 /* Checks if move should be discouraged based on its effect*/
-AI_CheckBadMove:
+ContestAI_CheckBadMove:
 	if_effect_eq CONTEST_EFFECT_STARTLE_FRONT_MON,                     AI_CBM_DependsOnPrevMon
 	if_effect_eq CONTEST_EFFECT_STARTLE_PREV_MON,                      AI_CBM_DependsOnPrevMon
 	if_effect_eq CONTEST_EFFECT_BADLY_STARTLE_FRONT_MON,               AI_CBM_DependsOnPrevMon

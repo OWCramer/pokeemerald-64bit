@@ -31,6 +31,9 @@ void ScriptCall(struct ScriptContext *ctx, const u8 *ptr);
 void ScriptReturn(struct ScriptContext *ctx);
 u16 ScriptReadHalfword(struct ScriptContext *ctx);
 u32 ScriptReadWord(struct ScriptContext *ctx);
+// Bytecode stores pointers as offsets from gScriptBase on 64-bit hosts;
+// this rebases them. Identity on the GBA build.
+#define ScriptReadPtr(ctx) SCRIPT_REBASE(ScriptReadWord(ctx))
 void LockPlayerFieldControls(void);
 void UnlockPlayerFieldControls(void);
 bool8 ArePlayerFieldControlsLocked(void);

@@ -1,15 +1,62 @@
 #ifdef PORTABLE
 #include "global.h"
+#include "gba/flash_internal.h"
+#include <stdint.h>
 // BIOS function implementations are based on the VBA-M source code.
 
 //memory defines here because there's no better spot for them
 u16 INTR_CHECK;
 void *INTR_VECTOR;
+#ifdef EMULATED_MEM_GUARDS
+// Guard bytes past each emulated hardware block. ASan cannot see a write that
+// stays inside one of these arrays but past the region the game believes it
+// owns, so the tail is poisoned and checked explicitly.
+#define GBA_GUARD 4096
+#define GBA_GUARD_BYTE 0xA5
+unsigned char REG_BASE[0x400 + GBA_GUARD] __attribute__ ((aligned (4)));
+unsigned char PLTT[PLTT_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
+unsigned char VRAM_[VRAM_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
+unsigned char OAM[OAM_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
+unsigned char FLASH_BASE[FLASH_BACKING_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
+
+static const struct { const char *name; unsigned char *base; unsigned long size; }
+sGuardedBlocks[] = {
+    { "REG_BASE",   REG_BASE,   0x400 },
+    { "PLTT",       PLTT,       PLTT_SIZE },
+    { "VRAM_",      VRAM_,      VRAM_SIZE },
+    { "OAM",        OAM,        OAM_SIZE },
+    { "FLASH_BASE", FLASH_BASE, FLASH_BACKING_SIZE },
+};
+
+void GbaGuardsInit(void)
+{
+    for (unsigned i = 0; i < sizeof sGuardedBlocks / sizeof *sGuardedBlocks; i++)
+        memset(sGuardedBlocks[i].base + sGuardedBlocks[i].size, GBA_GUARD_BYTE, GBA_GUARD);
+}
+
+void GbaGuardsCheck(const char *where)
+{
+    extern int printf(const char *, ...);
+    for (unsigned i = 0; i < sizeof sGuardedBlocks / sizeof *sGuardedBlocks; i++) {
+        unsigned char *g = sGuardedBlocks[i].base + sGuardedBlocks[i].size;
+        for (unsigned j = 0; j < GBA_GUARD; j++) {
+            if (g[j] != GBA_GUARD_BYTE) {
+                printf("GUARD HIT: %s +%lu (block size %lu) at %s\n",
+                       sGuardedBlocks[i].name, (unsigned long)j,
+                       sGuardedBlocks[i].size, where ? where : "?");
+                memset(g, GBA_GUARD_BYTE, GBA_GUARD);
+                break;
+            }
+        }
+    }
+}
+#else
 unsigned char REG_BASE[0x400] __attribute__ ((aligned (4)));
 unsigned char PLTT[PLTT_SIZE] __attribute__ ((aligned (4)));
 unsigned char VRAM_[VRAM_SIZE] __attribute__ ((aligned (4)));
 unsigned char OAM[OAM_SIZE] __attribute__ ((aligned (4)));
-unsigned char FLASH_BASE[131072] __attribute__ ((aligned (4)));
+unsigned char FLASH_BASE[FLASH_BACKING_SIZE] __attribute__ ((aligned (4)));
+#endif
 struct SoundInfo *SOUND_INFO_PTR;
 
 static uint32_t CPUReadMemory(const void *src)
@@ -310,10 +357,10 @@ void RLUnCompVram(const u32 *src, void *dest)
             while (blockHeader-- && remaining)
             {
                 remaining--;
-                if ((u32)dest & 1)
+                if ((uintptr_t)dest & 1)
                 {
                     halfWord |= block << 8;
-                    CPUWriteHalfWord((u32)dest ^ 1, halfWord);
+                    CPUWriteHalfWord((void *)((uintptr_t)dest ^ 1), halfWord);
                 }
                 else
                     halfWord = block;
@@ -328,10 +375,10 @@ void RLUnCompVram(const u32 *src, void *dest)
                 remaining--;
                 u8 byte = CPUReadByte(src);
                 src++;
-                if ((u32)dest & 1)
+                if ((uintptr_t)dest & 1)
                 {
                     halfWord |= byte << 8;
-                    CPUWriteHalfWord((u32)dest ^ 1, halfWord);
+                    CPUWriteHalfWord((void *)((uintptr_t)dest ^ 1), halfWord);
                 }
                 else
                     halfWord = byte;
@@ -339,7 +386,7 @@ void RLUnCompVram(const u32 *src, void *dest)
             }
         }
     }
-    if ((u32)dest & 1)
+    if ((uintptr_t)dest & 1)
     {
         padding--;
         dest++;

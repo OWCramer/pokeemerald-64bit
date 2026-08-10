@@ -44,3 +44,11 @@ prefabs.json
 *.js
 /pokeemerald-*.png
 /pokeemerald_modern-*.png
+
+# native 64-bit (macOS/arm64) build outputs
+/pokeemerald
+/pokeemerald.dSYM/
+build/native/
+# audio/video capture from the diagnostic hooks
+*.wav
+*.ppm

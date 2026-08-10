@@ -4,6 +4,15 @@
 #include "gba/types.h"
 #include "gba/m4a_internal.h"
 #include "platform.h"
+#include "cgb_audio.h"
+#include <stddef.h>
+
+// Defined below its first use; clang rejects the implicit declaration.
+void ChnVolSetAsm(struct MixerSource *chan, struct MP2KTrack *track);
+
+// Everything before cmdPtr is per-note state that gets reset; cmdPtr and the
+// pattern stack after it must survive. On the GBA that boundary was 0x40.
+#define TRACK_RESET_SIZE ((u32)offsetof(struct MP2KTrack, cmdPtr))
 
 // Don't uncomment this. vvvvv
 // #define POKEMON_EXTENSIONS
@@ -24,7 +33,10 @@ u32 umul3232H32(u32 a, u32 b) {
 
 void SoundMainBTM(void *ptr)
 {
-    CpuFill32(0, ptr, 0x40);
+    // 0x40 is the GBA offset of MP2KTrack::cmdPtr -- the point is to reset the
+    // track state without disturbing the instruction pointer that follows it.
+    // On a 64-bit host that boundary moves, so derive it instead of hardcoding.
+    CpuFill32(0, ptr, TRACK_RESET_SIZE);
 }
 
 // Removes chan from the doubly-linked list of channels associated with chan->track.
@@ -210,7 +222,15 @@ void MP2K_event_fine(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 
 // Sets the track's cmdPtr to the specified address.
 void MP2K_event_goto(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
-#ifdef NOT_GBA
+#ifdef NATIVE_BUILD
+    // Song bytecode stores jump targets as signed 32-bit offsets from
+    // gScriptBase. A raw 8-byte pointer cannot be used here: Mach-O requires
+    // relocated pointers to be 8-byte aligned, and these sit at arbitrary
+    // offsets inside a packed instruction stream.
+    s32 rel;
+    memcpy(&rel, track->cmdPtr, sizeof rel);
+    track->cmdPtr = SCRIPT_REBASE(rel);
+#elif defined(NOT_GBA)
     u8 *addr;
     memcpy(&addr, track->cmdPtr, sizeof(u8 *));
     track->cmdPtr = addr;
@@ -230,7 +250,11 @@ void MP2K_event_goto(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 void MP2K_event_patt(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
     u8 level = track->patternLevel;
     if (level < 3) {
+#ifdef NATIVE_BUILD
+        track->patternStack[level] = track->cmdPtr + sizeof(s32);
+#else
         track->patternStack[level] = track->cmdPtr + sizeof(u8 *);
+#endif
         track->patternLevel++;
         MP2K_event_goto(unused, track);
     } else {
@@ -288,6 +312,20 @@ void MP2K_event_keysh(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 void MP2K_event_voice(struct MP2KPlayerState *player, struct MP2KTrack *track) {
     u8 voice = *(track->cmdPtr++);
     struct MP2KInstrument *instrument = &player->voicegroup[voice];
+#ifdef NATIVE_BUILD
+    {
+        extern char *getenv(const char *);
+        extern int printf(const char *, ...);
+        static int checked, on; static unsigned n;
+        if (!checked) { checked = 1; on = getenv("EMERALD_CGB_TRACE") != NULL; }
+        if (on && n++ < 40) {
+            printf("VOICE idx=%3u group=%p inst=%p type=0x%02X wav=%p\n",
+                   (unsigned)voice, (void *)player->voicegroup, (void *)instrument,
+                   (unsigned)instrument->type, (void *)instrument->wav);
+            fflush(stdout);
+        }
+    }
+#endif
 #ifdef NOT_GBA
     track->instrument = *instrument;
 #else
@@ -387,7 +425,7 @@ void MP2KPlayerMain(void *voidPtrPlayer) {
             }
             
             if (currentTrack->status & MPT_FLG_START) {
-                CpuFill32(0, currentTrack, 0x40);
+                CpuFill32(0, currentTrack, TRACK_RESET_SIZE);
                 currentTrack->status = MPT_FLG_EXIST;
                 currentTrack->bendRange = 2;
                 currentTrack->volPublic = 64;
@@ -600,6 +638,22 @@ void MP2K_event_nxx(u8 clock, struct MP2KPlayerState *player, struct MP2KTrack *
         }
         // There's only one CgbChannel of a given type, so we don't need to loop to find it.
         chan = mixer->cgbChans + cgbType - 1;
+#ifdef NATIVE_BUILD
+        {   // EMERALD_CGB_TRACE=1 logs every CGB note trigger.
+            extern char *getenv(const char *);
+            extern int printf(const char *, ...);
+            static int checked, on;
+            if (!checked) { checked = 1; on = getenv("EMERALD_CGB_TRACE") != NULL; }
+            if (on) {
+                printf("CGB ch%u key=%u vel=%u type=0x%02X sweep=0x%02X cfg=0x%08X len=%u prevStatus=0x%02X\n",
+                       (unsigned)cgbType, (unsigned)track->key, (unsigned)track->velocity,
+                       (unsigned)instrument->type, (unsigned)instrument->panSweep,
+                       (unsigned)instrument->squareNoiseConfig, (unsigned)instrument->cgbLength,
+                       (unsigned)chan->status);
+                fflush(stdout);
+            }
+        }
+#endif
         
         // If this channel is running and not stopped,
         if ((chan->status & SOUND_CHANNEL_SF_ON) 
@@ -675,6 +729,20 @@ void MP2K_event_nxx(u8 clock, struct MP2KPlayerState *player, struct MP2KTrack *
     chan->key = key;
     chan->rhythmPan = forcedPan;
     chan->type = instrument->type;
+#ifdef NATIVE_BUILD
+    {
+        extern char *getenv(const char *);
+        extern int printf(const char *, ...);
+        static int checked, on;
+        if (!checked) { checked = 1; on = getenv("EMERALD_CGB_TRACE") != NULL; }
+        if (on) {
+            printf("PCM note key=%u vel=%u type=0x%02X wav=%p\n",
+                   (unsigned)track->key, (unsigned)track->velocity,
+                   (unsigned)instrument->type, (void *)instrument->wav);
+            fflush(stdout);
+        }
+    }
+#endif
     chan->wav = instrument->wav;
     chan->attack = instrument->attack;
     chan->decay = instrument->decay;
@@ -763,6 +831,36 @@ void m4aSoundVSync(void)
         for(u32 i = 0; i < samplesPerFrame; i++)
             audioBuffer[i] = m4aBuffer[i] + cgbBuffer[i];
 
+#ifdef NATIVE_BUILD
+        // EMERALD_AUDIO_STATS=1 reports peak amplitude periodically, so it is
+        // possible to confirm the mixer is producing sound (not just running)
+        // without a listener.
+        {
+            extern char *getenv(const char *);
+            extern int printf(const char *, ...);
+            static int checked, on; static unsigned n; static float peak;
+            if (!checked) { checked = 1; on = getenv("EMERALD_AUDIO_STATS") != NULL; }
+            if (on) {
+                static float pm, pc;
+                unsigned active = 0, k2;
+                for (u32 k = 0; k < samplesPerFrame; k++) {
+                    float a = audioBuffer[k] < 0 ? -audioBuffer[k] : audioBuffer[k];
+                    float m = m4aBuffer[k] < 0 ? -m4aBuffer[k] : m4aBuffer[k];
+                    float c = cgbBuffer[k] < 0 ? -cgbBuffer[k] : cgbBuffer[k];
+                    if (a > peak) peak = a;
+                    if (m > pm) pm = m;
+                    if (c > pc) pc = c;
+                }
+                for (k2 = 0; k2 < MAX_SAMPLE_CHANNELS; k2++)
+                    if (mixer->chans[k2].status != 0) active++;
+                if (++n % 60 == 0) {
+                    printf("audio: mix=%.4f m4a=%.4f cgb=%.4f activeChans=%u samples=%d\n",
+                           peak, pm, pc, active, (int)samplesPerFrame);
+                    peak = pm = pc = 0;
+                }
+            }
+        }
+#endif
         Platform_QueueAudio(audioBuffer, samplesPerFrame * 4);
         if((s8)(--mixer->dmaCounter) <= 0)
             mixer->dmaCounter = mixer->framesPerDmaCycle;

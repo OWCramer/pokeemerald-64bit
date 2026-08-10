@@ -394,7 +394,9 @@ void GeneratePokemonSampleAudio(struct SoundMixerState *mixer, struct MixerSourc
                     samplesLeftInWav -= newCoarsePos;
                     if (samplesLeftInWav <= 0) {
                         if (loopLen != 0) {
-                            current = chan->wav->loopStart;
+                            // loopStart is a sample offset, not an address;
+                            // it has to be rebased on the wave data like line 236.
+                            current = chan->wav->data + chan->wav->loopStart;
                             newCoarsePos = -samplesLeftInWav;
                             samplesLeftInWav += loopLen;
                             while (samplesLeftInWav <= 0) {

@@ -1,8 +1,18 @@
 	.macro def_special ptr:req, waitstate=0
+	/* Define the index unconditionally so every file including this gets a
+	   local absolute. Previously only the allocating file did, leaving other
+	   objects to reference an exported symbol via a 16-bit absolute
+	   relocation -- which ELF supports and Mach-O does not. */
+	.set SPECIAL_\ptr, __special__
 	.if ALLOCATE_SPECIAL_TABLE
 	.global SPECIAL_\ptr
-	.set SPECIAL_\ptr, __special__
+	/* gSpecials is a real C function-pointer array (SpecialFunc[]), so the
+	   entries widen to 8 bytes on a 64-bit host. */
+	.ifdef PORTABLE_ASM
+	.quad \ptr
+	.else
 	.int \ptr
+	.endif
 	.endif
 	.set SPECIAL_WAITSTATE_\ptr, \waitstate
 	.set __special__, __special__ + 1

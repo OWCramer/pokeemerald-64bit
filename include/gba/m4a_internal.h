@@ -232,7 +232,16 @@ struct SoundInfo
     MPlayFunc *MPlayJumpTable;
     PlyNoteFunc plynote;
     ExtVolPitFunc ExtVolPit;
+#ifdef NATIVE_BUILD
+    // This gap stands in for four pointers that struct SoundMixerState
+    // (sound_mixer.h) names explicitly -- the two structs alias the same
+    // gSoundInfo object. Four pointers are 16 bytes on the GBA but 32 on a
+    // 64-bit host, so the fixed 16 left the two views disagreeing about
+    // where chans[] starts, and the mixer wrote past the allocation.
+    u8 gap2[32];
+#else
     u8 gap2[16];
+#endif
     struct SoundChannel chans[MAX_DIRECTSOUND_CHANNELS];
     #ifndef PORTABLE
     s8 ALIGNED(4) pcmBuffer[PCM_DMA_BUF_SIZE * 2];
@@ -241,6 +250,10 @@ struct SoundInfo
     #endif
 };
 
+// The assembler emits these four bytes followed immediately by the pointers,
+// with no padding, because the same bytes are also walked as a packed stream.
+// Packing keeps the C view in step on a 64-bit host, where the natural layout
+// would otherwise insert 4 bytes before `tone`.
 struct SongHeader
 {
     u8 trackCount;
@@ -263,6 +276,7 @@ struct PokemonCrySong
     u8 part0; // 0x11
     u8 tuneValue; // 0x12
     u8 gotoCmd; // 0x13
+    // Holds a gScriptBase-relative offset on a 64-bit host (see MP2K_event_goto).
     u32 gotoTarget; // 0x14
     u8 part1; // 0x18
     u8 tuneValue2; // 0x19

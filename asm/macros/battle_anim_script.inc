@@ -12,26 +12,48 @@
 
 	.macro createsprite template:req, anim_battler:req, subpriority_offset:req, argv:vararg
 	.byte 0x02
+	.ifdef PORTABLE_ASM
+	.ifc \template, NULL
+	.long 0
+	.else
+	.long (\template - _gScriptBase)
+	.endif
+	.else
 	.int \template
+	.endif
 	.if \anim_battler == ANIM_TARGET
 	.byte ANIMSPRITE_IS_TARGET | (\subpriority_offset & 0x7F)
 	.else
 	.byte (\subpriority_offset & 0x7F)
 	.endif
-	.byte (.Lsprite_\@_2 - .Lsprite_\@_1) / 2
-.Lsprite_\@_1:
+	/* Count the varargs directly. Mach-O cannot fold a divided label
+	   difference into an absolute .byte the way GNU as does. */
+	.set _argc_\@, 0
+	.irp _a, \argv
+	.set _argc_\@, _argc_\@ + 1
+	.endr
+	.byte _argc_\@
 	.short \argv
-.Lsprite_\@_2:
 	.endm
 
 	.macro createvisualtask addr:req, priority:req, argv:vararg
 	.byte 0x03
+	.ifdef PORTABLE_ASM
+	.ifc \addr, NULL
+	.long 0
+	.else
+	.long (\addr - _gScriptBase)
+	.endif
+	.else
 	.int \addr
+	.endif
 	.byte \priority
-	.byte (.Lcreatetask_\@_2 - .Lcreatetask_\@_1) / 2
-.Lcreatetask_\@_1:
+	.set _argc_\@, 0
+	.irp _a, \argv
+	.set _argc_\@, _argc_\@ + 1
+	.endr
+	.byte _argc_\@
 	.short \argv
-.Lcreatetask_\@_2:
 	.endm
 
 	.macro delay frames:req
@@ -81,7 +103,15 @@
 
 	.macro call ptr:req
 	.byte 0xe
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro return
@@ -96,19 +126,51 @@
 
 	.macro choosetwoturnanim ptr1:req, ptr2:req
 	.byte 0x11
+	.ifdef PORTABLE_ASM
+	.ifc \ptr1, NULL
+	.long 0
+	.else
+	.long (\ptr1 - _gScriptBase)
+	.endif
+	.else
 	.int \ptr1
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \ptr2, NULL
+	.long 0
+	.else
+	.long (\ptr2 - _gScriptBase)
+	.endif
+	.else
 	.int \ptr2
+	.endif
 	.endm
 
 	.macro jumpifmoveturn value:req, ptr:req
 	.byte 0x12
 	.byte \value
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro goto ptr:req
 	.byte 0x13
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro fadetobg bg:req
@@ -175,11 +237,21 @@
 
 	.macro createsoundtask addr:req, argv:vararg
 	.byte 0x1F
+	.ifdef PORTABLE_ASM
+	.ifc \addr, NULL
+	.long 0
+	.else
+	.long (\addr - _gScriptBase)
+	.endif
+	.else
 	.int \addr
-	.byte (.Lcreatetask_1F_\@_2 - .Lcreatetask_1F_\@_1) / 2
-.Lcreatetask_1F_\@_1:
+	.endif
+	.set _argc_\@, 0
+	.irp _a, \argv
+	.set _argc_\@, _argc_\@ + 1
+	.endr
+	.byte _argc_\@
 	.short \argv
-.Lcreatetask_1F_\@_2:
 	.endm
 
 	.macro waitsound
@@ -190,7 +262,15 @@
 	.byte 0x21
 	.byte \argId
 	.short \value
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro monbg_static battler:req
@@ -205,7 +285,15 @@
 
 	.macro jumpifcontest ptr:req
 	.byte 0x24
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro fadetobgfromset bgOpponent:req, bgPlayer:req, bgContest:req

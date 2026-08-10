@@ -56,7 +56,13 @@ extern unsigned char PLTT[PLTT_SIZE] __attribute__ ((aligned (4)));
 #define VRAM      0x6000000
 #else
 extern unsigned char VRAM_[VRAM_SIZE] __attribute__ ((aligned (4)));
+#ifdef NATIVE_BUILD
+// A u32 cast truncates the address on a 64-bit host. u8 * keeps the byte
+// arithmetic these macros rely on (VRAM + 0x10000) and still passes to void *.
+#define VRAM ((u8 *)VRAM_)
+#else
 #define VRAM (u32)VRAM_
+#endif
 #endif
 
 #define BG_VRAM           VRAM

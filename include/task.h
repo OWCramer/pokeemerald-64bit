@@ -6,7 +6,14 @@
 #define TASK_NONE TAIL_SENTINEL
 
 #define NUM_TASKS 16
+#ifdef NATIVE_BUILD
+// GF cast Task data to struct ListMenu in several places. On a 64-bit host
+// ListMenu grows to 48 bytes (pointer members), so the scratch area has to
+// keep up. Task data is runtime-only, never serialized, so widening is safe.
+#define NUM_TASK_DATA 24
+#else
 #define NUM_TASK_DATA 16
+#endif
 
 typedef void (*TaskFunc)(u8 taskId);
 

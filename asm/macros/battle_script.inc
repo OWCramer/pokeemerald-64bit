@@ -5,7 +5,15 @@
 
 	.macro accuracycheck failPtr:req, move:req
 	.byte B_SCR_OP_ACCURACYCHECK
+	.ifdef PORTABLE_ASM
+	.ifc \failPtr, NULL
+	.long 0
+	.else
+	.long (\failPtr - _gScriptBase)
+	.endif
+	.else
 	.int \failPtr
+	.endif
 	.short \move
 	.endm
 
@@ -84,12 +92,28 @@
 
 	.macro printfromtable ptr:req
 	.byte B_SCR_OP_PRINTFROMTABLE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro printselectionstringfromtable ptr:req
 	.byte B_SCR_OP_PRINTSELECTIONSTRINGFROMTABLE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro seteffectwithchance
@@ -120,7 +144,15 @@
 	.byte B_SCR_OP_TRYFAINTMON
 	.byte \battler
 	.byte TRUE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro dofaintanimation battler:req
@@ -137,28 +169,60 @@
 	.byte B_SCR_OP_JUMPIFSTATUS
 	.byte \battler
 	.int \status1
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifstatus2 battler:req, status2:req, ptr:req
 	.byte B_SCR_OP_JUMPIFSTATUS2
 	.byte \battler
 	.int \status2
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifability battler:req, ability:req, ptr:req
 	.byte B_SCR_OP_JUMPIFABILITY
 	.byte \battler
 	.byte \ability
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifsideaffecting battler:req, sidestatus:req, ptr:req
 	.byte B_SCR_OP_JUMPIFSIDEAFFECTING
 	.byte \battler
 	.short \sidestatus
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifstat battler:req, ifflag:req, stat:req, value:req, ptr
@@ -167,7 +231,15 @@
 	.byte \ifflag
 	.byte \stat
 	.byte \value
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifstatus3condition battler:req, status3:req, condition:req, ptr:req
@@ -175,14 +247,30 @@
 	.byte \battler
 	.int \status3
 	.byte \condition
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpiftype battler:req, type:req, ptr:req
 	.byte B_SCR_OP_JUMPIFTYPE
 	.byte \battler
 	.byte \type
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro getexp battler:req
@@ -192,7 +280,15 @@
 
 	.macro checkteamslost ptr:req
 	.byte B_SCR_OP_CHECKTEAMSLOST
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro movevaluescleanup
@@ -204,122 +300,347 @@
 	.byte \value
 	.endm
 
+	/* Despite the generic parameter name, \value is a jump target. */
 	.macro decrementmultihit value:req
 	.byte B_SCR_OP_DECREMENTMULTIHIT
+	.ifdef PORTABLE_ASM
+	.ifc \value, NULL
+	.long 0
+	.else
+	.long (\value - _gScriptBase)
+	.endif
+	.else
 	.int \value
+	.endif
 	.endm
 
 	.macro goto ptr:req
 	.byte B_SCR_OP_GOTO
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifbyte ifflag:req, val:req, byte:req, ptr:req
 	.byte B_SCR_OP_JUMPIFBYTE
 	.byte \ifflag
+	.ifdef PORTABLE_ASM
+	.ifc \val, NULL
+	.long 0
+	.else
+	.long (\val - _gScriptBase)
+	.endif
+	.else
 	.int \val
+	.endif
 	.byte \byte
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifhalfword ifflag:req, val:req, hword:req, ptr:req
 	.byte B_SCR_OP_JUMPIFHALFWORD
 	.byte \ifflag
+	.ifdef PORTABLE_ASM
+	.ifc \val, NULL
+	.long 0
+	.else
+	.long (\val - _gScriptBase)
+	.endif
+	.else
 	.int \val
+	.endif
 	.short \hword
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifword ifflag:req, val:req, word:req, ptr:req
 	.byte B_SCR_OP_JUMPIFWORD
 	.byte \ifflag
+	.ifdef PORTABLE_ASM
+	.ifc \val, NULL
+	.long 0
+	.else
+	.long (\val - _gScriptBase)
+	.endif
+	.else
 	.int \val
+	.endif
 	.int \word
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifarrayequal val1:req, val2:req, size:req, ptr:req
 	.byte B_SCR_OP_JUMPIFARRAYEQUAL
+	.ifdef PORTABLE_ASM
+	.ifc \val1, NULL
+	.long 0
+	.else
+	.long (\val1 - _gScriptBase)
+	.endif
+	.else
 	.int \val1
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \val2, NULL
+	.long 0
+	.else
+	.long (\val2 - _gScriptBase)
+	.endif
+	.else
 	.int \val2
+	.endif
 	.byte \size
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifarraynotequal val1:req, val2:req, size:req, ptr:req
 	.byte B_SCR_OP_JUMPIFARRAYNOTEQUAL
+	.ifdef PORTABLE_ASM
+	.ifc \val1, NULL
+	.long 0
+	.else
+	.long (\val1 - _gScriptBase)
+	.endif
+	.else
 	.int \val1
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \val2, NULL
+	.long 0
+	.else
+	.long (\val2 - _gScriptBase)
+	.endif
+	.else
 	.int \val2
+	.endif
 	.byte \size
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setbyte ptr:req, byte:req
 	.byte B_SCR_OP_SETBYTE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \byte
 	.endm
 
 	.macro addbyte ptr:req, byte:req
 	.byte B_SCR_OP_ADDBYTE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \byte
 	.endm
 
 	.macro subbyte ptr:req, byte:req
 	.byte B_SCR_OP_SUBBYTE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \byte
 	.endm
 
 	.macro copyarray dest:req, src:req, size:req
 	.byte B_SCR_OP_COPYARRAY
+	.ifdef PORTABLE_ASM
+	.ifc \dest, NULL
+	.long 0
+	.else
+	.long (\dest - _gScriptBase)
+	.endif
+	.else
 	.int \dest
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \src, NULL
+	.long 0
+	.else
+	.long (\src - _gScriptBase)
+	.endif
+	.else
 	.int \src
+	.endif
 	.byte \size
 	.endm
 
 	.macro copyarraywithindex dest:req, src:req, index:req, size:req
 	.byte B_SCR_OP_COPYARRAYWITHINDEX
+	.ifdef PORTABLE_ASM
+	.ifc \dest, NULL
+	.long 0
+	.else
+	.long (\dest - _gScriptBase)
+	.endif
+	.else
 	.int \dest
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \src, NULL
+	.long 0
+	.else
+	.long (\src - _gScriptBase)
+	.endif
+	.else
 	.int \src
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \index, NULL
+	.long 0
+	.else
+	.long (\index - _gScriptBase)
+	.endif
+	.else
 	.int \index
+	.endif
 	.byte \size
 	.endm
 
 	.macro orbyte ptr:req, byte:req
 	.byte B_SCR_OP_ORBYTE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \byte
 	.endm
 
 	.macro orhalfword ptr:req, hword:req
 	.byte B_SCR_OP_ORHALFWORD
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.short \hword
 	.endm
 
 	.macro orword ptr:req, word:req
 	.byte B_SCR_OP_ORWORD
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.int \word
 	.endm
 
 	.macro bicbyte ptr:req, byte:req
 	.byte B_SCR_OP_BICBYTE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \byte
 	.endm
 
 	.macro bichalfword ptr:req, hword:req
 	.byte B_SCR_OP_BICHALFWORD
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.short \hword
 	.endm
 
 	.macro bicword ptr:req, word:req
 	.byte B_SCR_OP_BICWORD
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.int \word
 	.endm
 
@@ -355,25 +676,57 @@
 
 	.macro jumpifaffectedbyprotect ptr:req
 	.byte B_SCR_OP_JUMPIFAFFECTEDBYPROTECT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro call ptr:req
 	.byte B_SCR_OP_CALL
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpiftype2 battler:req, type:req, ptr:req
 	.byte B_SCR_OP_JUMPIFTYPE2
 	.byte \battler
 	.byte \type
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifabilitypresent ability:req, ptr:req
 	.byte B_SCR_OP_JUMPIFABILITYPRESENT
 	.byte \ability
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro endselectionscript
@@ -384,14 +737,38 @@
 	.byte B_SCR_OP_PLAYANIMATION
 	.byte \battler
 	.byte \animType
+	.ifdef PORTABLE_ASM
+	.ifc \arg, NULL
+	.long 0
+	.else
+	.long (\arg - _gScriptBase)
+	.endif
+	.else
 	.int \arg
+	.endif
 	.endm
 
 	.macro playanimation_var battler:req, animType:req, arg=NULL
 	.byte B_SCR_OP_PLAYANIMATION_VAR
 	.byte \battler
+	.ifdef PORTABLE_ASM
+	.ifc \animType, NULL
+	.long 0
+	.else
+	.long (\animType - _gScriptBase)
+	.endif
+	.else
 	.int \animType
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \arg, NULL
+	.long 0
+	.else
+	.long (\arg - _gScriptBase)
+	.endif
+	.else
 	.int \arg
+	.endif
 	.endm
 
 	.macro setgraphicalstatchangevalues
@@ -470,13 +847,29 @@
 	.macro jumpifcantswitch battler:req, ptr:req
 	.byte B_SCR_OP_JUMPIFCANTSWITCH
 	.byte \battler
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro openpartyscreen battler:req, ptr:req
 	.byte B_SCR_OP_OPENPARTYSCREEN
 	.byte \battler
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro switchhandleorder battler:req, state:req
@@ -521,19 +914,51 @@
 
 	.macro handlelearnnewmove learnedMovePtr:req, nothingToLearnPtr:req, isFirstMove:req
 	.byte B_SCR_OP_HANDLELEARNNEWMOVE
+	.ifdef PORTABLE_ASM
+	.ifc \learnedMovePtr, NULL
+	.long 0
+	.else
+	.long (\learnedMovePtr - _gScriptBase)
+	.endif
+	.else
 	.int \learnedMovePtr
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \nothingToLearnPtr, NULL
+	.long 0
+	.else
+	.long (\nothingToLearnPtr - _gScriptBase)
+	.endif
+	.else
 	.int \nothingToLearnPtr
+	.endif
 	.byte \isFirstMove
 	.endm
 
 	.macro yesnoboxlearnmove forgotMovePtr:req
 	.byte B_SCR_OP_YESNOBOXLEARNMOVE
+	.ifdef PORTABLE_ASM
+	.ifc \forgotMovePtr, NULL
+	.long 0
+	.else
+	.long (\forgotMovePtr - _gScriptBase)
+	.endif
+	.else
 	.int \forgotMovePtr
+	.endif
 	.endm
 
 	.macro yesnoboxstoplearningmove noPtr:req
 	.byte B_SCR_OP_YESNOBOXSTOPLEARNINGMOVE
+	.ifdef PORTABLE_ASM
+	.ifc \noPtr, NULL
+	.long 0
+	.else
+	.long (\noPtr - _gScriptBase)
+	.endif
+	.else
 	.int \noPtr
+	.endif
 	.endm
 
 	.macro hitanimation battler:req
@@ -641,7 +1066,15 @@
 
 	.macro jumpifplayerran ptr:req
 	.byte B_SCR_OP_JUMPIFPLAYERRAN
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro hpthresholds battler:req
@@ -678,12 +1111,28 @@
 
 	.macro jumpifnexttargetvalid ptr:req
 	.byte B_SCR_OP_JUMPIFNEXTTARGETVALID
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro tryhealhalfhealth ptr:req, battler:req
 	.byte B_SCR_OP_TRYHEALHALFHEALTH
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \battler
 	.endm
 
@@ -710,12 +1159,28 @@
 
 	.macro trysetrest ptr:req
 	.byte B_SCR_OP_TRYSETREST
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifnotfirstturn ptr:req
 	.byte B_SCR_OP_JUMPIFNOTFIRSTTURN
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro nop
@@ -724,7 +1189,15 @@
 
 	.macro jumpifcantmakeasleep ptr:req
 	.byte B_SCR_OP_JUMPIFCANTMAKEASLEEP
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro stockpile
@@ -733,12 +1206,28 @@
 
 	.macro stockpiletobasedamage ptr:req
 	.byte B_SCR_OP_STOCKPILETOBASEDAMAGE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro stockpiletohpheal ptr:req
 	.byte B_SCR_OP_STOCKPILETOHPHEAL
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro negativedamage
@@ -748,7 +1237,15 @@
 	.macro statbuffchange flags:req, jumpptr:req
 	.byte B_SCR_OP_STATBUFFCHANGE
 	.byte \flags
+	.ifdef PORTABLE_ASM
+	.ifc \jumpptr, NULL
+	.long 0
+	.else
+	.long (\jumpptr - _gScriptBase)
+	.endif
+	.else
 	.int \jumpptr
+	.endif
 	.endm
 
 	.macro normalisebuffs
@@ -774,12 +1271,28 @@
 
 	.macro forcerandomswitch ptr:req
 	.byte B_SCR_OP_FORCERANDOMSWITCH
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro tryconversiontypechange ptr:req
 	.byte B_SCR_OP_TRYCONVERSIONTYPECHANGE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro givepaydaymoney
@@ -792,7 +1305,15 @@
 
 	.macro tryKO ptr:req
 	.byte B_SCR_OP_TRYKO
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro damagetohalftargethp
@@ -809,7 +1330,15 @@
 
 	.macro tryinfatuating ptr:req
 	.byte B_SCR_OP_TRYINFATUATING
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro updatestatusicon battler:req
@@ -835,7 +1364,15 @@
 
 	.macro mimicattackcopy ptr:req
 	.byte B_SCR_OP_MIMICATTACKCOPY
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro metronome
@@ -852,32 +1389,80 @@
 
 	.macro counterdamagecalculator ptr:req
 	.byte B_SCR_OP_COUNTERDAMAGECALCULATOR
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro mirrorcoatdamagecalculator ptr:req
 	.byte B_SCR_OP_MIRRORCOATDAMAGECALCULATOR
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro disablelastusedattack ptr:req
 	.byte B_SCR_OP_DISABLELASTUSEDATTACK
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysetencore ptr:req
 	.byte B_SCR_OP_TRYSETENCORE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro painsplitdmgcalc ptr:req
 	.byte B_SCR_OP_PAINSPLITDMGCALC
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro settypetorandomresistance ptr:req
 	.byte B_SCR_OP_SETTYPETORANDOMRESISTANCE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setalwayshitflag
@@ -886,12 +1471,28 @@
 
 	.macro copymovepermanently ptr:req
 	.byte B_SCR_OP_COPYMOVEPERMANENTLY
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trychoosesleeptalkmove ptr:req
 	.byte B_SCR_OP_TRYCHOOSESLEEPTALKMOVE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setdestinybond
@@ -908,7 +1509,15 @@
 
 	.macro tryspiteppreduce ptr:req
 	.byte B_SCR_OP_TRYSPITEPPREDUCE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro healpartystatus
@@ -917,12 +1526,28 @@
 
 	.macro cursetarget ptr:req
 	.byte B_SCR_OP_CURSETARGET
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysetspikes ptr:req
 	.byte B_SCR_OP_TRYSETSPIKES
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setforesight
@@ -931,7 +1556,15 @@
 
 	.macro trysetperishsong ptr:req
 	.byte B_SCR_OP_TRYSETPERISHSONG
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro rolloutdamagecalculation
@@ -941,7 +1574,15 @@
 	.macro jumpifconfusedandstatmaxed stat:req, ptr:req
 	.byte B_SCR_OP_JUMPIFCONFUSEDANDSTATMAXED
 	.byte \stat
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro furycuttercalc
@@ -966,7 +1607,15 @@
 
 	.macro jumpifnopursuitswitchdmg ptr:req
 	.byte B_SCR_OP_JUMPIFNOPURSUITSWITCHDMG
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setsunny
@@ -975,12 +1624,28 @@
 
 	.macro maxattackhalvehp ptr:req
 	.byte B_SCR_OP_MAXATTACKHALVEHP
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro copyfoestats ptr:req
 	.byte B_SCR_OP_COPYFOESTATS
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro rapidspinfree
@@ -993,7 +1658,15 @@
 
 	.macro recoverbasedonsunlight ptr:req
 	.byte B_SCR_OP_RECOVERBASEDONSUNLIGHT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro hiddenpowercalc
@@ -1006,13 +1679,37 @@
 
 	.macro trysetfutureattack ptr:req
 	.byte B_SCR_OP_TRYSETFUTUREATTACK
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trydobeatup endPtr:req, failPtr:req
 	.byte B_SCR_OP_TRYDOBEATUP
+	.ifdef PORTABLE_ASM
+	.ifc \endPtr, NULL
+	.long 0
+	.else
+	.long (\endPtr - _gScriptBase)
+	.endif
+	.else
 	.int \endPtr
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \failPtr, NULL
+	.long 0
+	.else
+	.long (\failPtr - _gScriptBase)
+	.endif
+	.else
 	.int \failPtr
+	.endif
 	.endm
 
 	.macro setsemiinvulnerablebit
@@ -1033,7 +1730,15 @@
 
 	.macro trymemento ptr:req
 	.byte B_SCR_OP_TRYMEMENTO
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setforcedtarget
@@ -1050,48 +1755,120 @@
 
 	.macro cureifburnedparalyzedorpoisoned ptr:req
 	.byte B_SCR_OP_CUREIFBURNEDPARALYZEDORPOISONED
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro settorment ptr:req
 	.byte B_SCR_OP_SETTORMENT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro jumpifnodamage ptr:req
 	.byte B_SCR_OP_JUMPIFNODAMAGE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro settaunt ptr:req
 	.byte B_SCR_OP_SETTAUNT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysethelpinghand ptr:req
 	.byte B_SCR_OP_TRYSETHELPINGHAND
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro tryswapitems ptr:req
 	.byte B_SCR_OP_TRYSWAPITEMS
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trycopyability ptr:req
 	.byte B_SCR_OP_TRYCOPYABILITY
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trywish turnNumber:req, ptr:req
 	.byte B_SCR_OP_TRYWISH
 	.byte \turnNumber
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysetroots ptr:req
 	.byte B_SCR_OP_TRYSETROOTS
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro doubledamagedealtifdamaged
@@ -1100,12 +1877,28 @@
 
 	.macro setyawn ptr:req
 	.byte B_SCR_OP_SETYAWN
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setdamagetohealthdifference ptr:req
 	.byte B_SCR_OP_SETDAMAGETOHEALTHDIFFERENCE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro scaledamagebyhealthratio
@@ -1114,17 +1907,41 @@
 
 	.macro tryswapabilities ptr:req
 	.byte B_SCR_OP_TRYSWAPABILITIES
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro tryimprison ptr:req
 	.byte B_SCR_OP_TRYIMPRISON
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysetgrudge ptr:req
 	.byte B_SCR_OP_TRYSETGRUDGE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro weightdamagecalculation
@@ -1133,22 +1950,54 @@
 
 	.macro assistattackselect ptr:req
 	.byte B_SCR_OP_ASSISTATTACKSELECT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysetmagiccoat ptr:req
 	.byte B_SCR_OP_TRYSETMAGICCOAT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trysetsnatch ptr:req
 	.byte B_SCR_OP_TRYSETSNATCH
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro trygetintimidatetarget ptr:req
 	.byte B_SCR_OP_TRYGETINTIMIDATETARGET
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro switchoutabilities battler:req
@@ -1159,7 +2008,15 @@
 	.macro jumpifhasnohp battler:req, ptr:req
 	.byte B_SCR_OP_JUMPIFHASNOHP
 	.byte \battler
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro getsecretpowereffect
@@ -1180,7 +2037,15 @@
 
 	.macro settypebasedhalvers ptr:req
 	.byte B_SCR_OP_SETTYPEBASEDHALVERS
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro setweatherballtype
@@ -1189,17 +2054,41 @@
 
 	.macro tryrecycleitem ptr:req
 	.byte B_SCR_OP_TRYRECYCLEITEM
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro settypetoenvironment ptr:req
 	.byte B_SCR_OP_SETTYPETOENVIRONMENT
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro pursuitdoubles ptr:req
 	.byte B_SCR_OP_PURSUITDOUBLES
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro snatchsetbattlers
@@ -1220,7 +2109,15 @@
 
 	.macro trysetcaughtmondexflags ptr:req
 	.byte B_SCR_OP_TRYSETCAUGHTMONDEXFLAGS
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro displaydexinfo
@@ -1229,7 +2126,15 @@
 
 	.macro trygivecaughtmonnick ptr:req
 	.byte B_SCR_OP_TRYGIVECAUGHTMONNICK
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	.macro subattackerhpbydmg

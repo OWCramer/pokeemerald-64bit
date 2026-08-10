@@ -29,27 +29,59 @@
 	/* Jumps to destination and continues script execution from there. The location of the calling script is remembered and can be returned to later.*/
 	.macro call destination:req
 	.byte SCR_OP_CALL
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Jumps to destination and continues script execution from there.*/
 	.macro goto destination:req
 	.byte SCR_OP_GOTO
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* If the result of the last comparison matches condition (see Comparison operators), jumps to destination and continues script execution from there.*/
 	.macro goto_if condition:req, destination:req
 	.byte SCR_OP_GOTO_IF
 	.byte \condition
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* If the result of the last comparison matches condition (see Comparison operators), calls destination.*/
 	.macro call_if condition:req, destination:req
 	.byte SCR_OP_CALL_IF
 	.byte \condition
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Jumps to the script in gStdScripts at index function.*/
@@ -101,10 +133,20 @@
 	.endm
 
 	/* Sets the value at the specified script data index to a fixed 4-byte value.*/
+	/* \value is always a text pointer here (only reached via the message
+	   macros), so it takes the same anchor-relative encoding. */
 	.macro loadword destIndex:req, value:req
 	.byte SCR_OP_LOAD_WORD
 	.byte \destIndex
+	.ifdef PORTABLE_ASM
+	.ifc \value, NULL
+	.long 0
+	.else
+	.long (\value - _gScriptBase)
+	.endif
+	.else
 	.int \value
+	.endif
 	.endm
 
 	/* Sets the value at the specified script data index to a fixed byte value.*/
@@ -118,21 +160,45 @@
 	.macro setptr value:req, ptr:req
 	.byte SCR_OP_SETPTR
 	.byte \value
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	/* Sets the value at the specified script data index to the value at pointer 'source'.*/
 	.macro loadbytefromptr destIndex:req, source:req
 	.byte SCR_OP_LOADBYTEFROMPTR
 	.byte \destIndex
+	.ifdef PORTABLE_ASM
+	.ifc \source, NULL
+	.long 0
+	.else
+	.long (\source - _gScriptBase)
+	.endif
+	.else
 	.int \source
+	.endif
 	.endm
 
 	/* Sets the value at pointer 'destination' to the contents of the script data at 'srcIndex'.*/
 	.macro setptrbyte srcIndex:req, destination:req
 	.byte SCR_OP_SETPTRBYTE
 	.byte \srcIndex
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Copies the contents of the script data from one index to another.*/
@@ -145,14 +211,35 @@
 	/* Copies the byte at source to destination, replacing whatever byte was previously there.*/
 	.macro copybyte destination:req, source:req
 	.byte SCR_OP_COPYBYTE
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \source, NULL
+	.long 0
+	.else
+	.long (\source - _gScriptBase)
+	.endif
+	.else
 	.int \source
+	.endif
 	.endm
 
 	@ Changes the value of destination to value.
 	.macro setvar destination:req, value:req, warn=TRUE
+	.ifndef PORTABLE_ASM
+	@ Diagnostic only. Some values here are assembler enum constants (ITEM_TM_*)
+	@ that GNU as treats as 0 when undefined in an .if, while clang errors out.
+	@ Skipping the lint on the native build affects no emitted bytes.
 	.if \warn && ((\value >= VARS_START && \value <= VARS_END) || (\value >= SPECIAL_VARS_START && \value <= SPECIAL_VARS_END))
 	.warning "setvar with a value that might be a VAR_ constant; did you mean copyvar instead?"
+	.endif
 	.endif
 	.byte SCR_OP_SETVAR
 	.short \destination
@@ -211,14 +298,30 @@
 	.macro compare_local_to_ptr local:req, ptr:req
 	.byte SCR_OP_COMPARE_LOCAL_TO_PTR
 	.byte \local
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 	/* Compares the value at 'ptr' to the value of the script data at index 'local'.*/
 	/* The result is stored in comparisonResult to be acted on by goto_if / call_if*/
 	.macro compare_ptr_to_local ptr:req, local:req
 	.byte SCR_OP_COMPARE_PTR_TO_LOCAL
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \local
 	.endm
 
@@ -226,7 +329,15 @@
 	/* The result is stored in comparisonResult to be acted on by goto_if / call_if*/
 	.macro compare_ptr_to_value ptr:req, value:req
 	.byte SCR_OP_COMPARE_PTR_TO_VALUE
+	.ifdef PORTABLE_ASM
+	.ifc \ptr, NULL
+	.long 0
+	.else
+	.long (\ptr - _gScriptBase)
+	.endif
+	.else
 	.int \ptr
+	.endif
 	.byte \value
 	.endm
 
@@ -234,8 +345,24 @@
 	/* The result is stored in comparisonResult to be acted on by goto_if / call_if*/
 	.macro compare_ptr_to_ptr ptr1:req, ptr2:req
 	.byte SCR_OP_COMPARE_PTR_TO_PTR
+	.ifdef PORTABLE_ASM
+	.ifc \ptr1, NULL
+	.long 0
+	.else
+	.long (\ptr1 - _gScriptBase)
+	.endif
+	.else
 	.int \ptr1
+	.endif
+	.ifdef PORTABLE_ASM
+	.ifc \ptr2, NULL
+	.long 0
+	.else
+	.long (\ptr2 - _gScriptBase)
+	.endif
+	.else
 	.int \ptr2
+	.endif
 	.endm
 
 	/* Compares the value of 'var' to a fixed value.*/
@@ -267,13 +394,29 @@
 	/* Calls the native C function stored at func.*/
 	.macro callnative func:req
 	.byte SCR_OP_CALLNATIVE
+	.ifdef PORTABLE_ASM
+	.ifc \func, NULL
+	.long 0
+	.else
+	.long (\func - _gScriptBase)
+	.endif
+	.else
 	.int \func
+	.endif
 	.endm
 
 	/* Replaces the script with the function stored at func. Execution returns to the bytecode script when func returns TRUE.*/
 	.macro gotonative func:req
 	.byte SCR_OP_GOTONATIVE
+	.ifdef PORTABLE_ASM
+	.ifc \func, NULL
+	.long 0
+	.else
+	.long (\func - _gScriptBase)
+	.endif
+	.else
 	.int \func
+	.endif
 	.endm
 
 	/* Calls a function listed in the table in data/specials.inc.*/
@@ -302,6 +445,14 @@
 	@ implicit is set when a waitstate is generated as part of another command (e.g. special)
 	@ if an implicit waitstate is immediately followed by another waitstate, a warning is raised
 	.macro waitstate implicit=0
+	.ifdef PORTABLE_ASM
+	@ clang's assembler cannot fold `symbol == .` (or `. - symbol`) into an
+	@ absolute inside .if, so the adjacency check is unavailable. Always emit.
+	@ The only divergence is a redundant SCR_OP_WAITSTATE when an explicit
+	@ waitstate directly follows an implicit one -- the second wait finds the
+	@ state already clear and returns immediately.
+	.byte SCR_OP_WAITSTATE
+	.else
 	.if _last_implicit_waitstate == .
 	.warning "explicit waitstate follows implicit waitstate, ignoring"
 	.else
@@ -309,6 +460,7 @@
 	.endif
 	.if \implicit
 	.set _last_implicit_waitstate, .
+	.endif
 	.endif
 	.endm
 
@@ -623,12 +775,28 @@
 		.ifb \map
 			.byte SCR_OP_APPLYMOVEMENT
 			.short \localId
+			.ifdef PORTABLE_ASM
+			.ifc \movements, NULL
+			.long 0
+			.else
+			.long (\movements - _gScriptBase)
+			.endif
+			.else
 			.int \movements
+			.endif
 		.else
 			@ Really only useful if the object has followed from one map to another (e.g. Wally during the catching event).
 			.byte SCR_OP_APPLYMOVEMENTAT
 			.short \localId
+			.ifdef PORTABLE_ASM
+			.ifc \movements, NULL
+			.long 0
+			.else
+			.long (\movements - _gScriptBase)
+			.endif
+			.else
 			.int \movements
+			.endif
 			map \map
 		.endif
 	.endm
@@ -733,51 +901,315 @@
 	.short \trainer
 	.short \local_id
 	.if \type == TRAINER_BATTLE_SINGLE
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer3, NULL
+		.long 0
+		.else
+		.long (\pointer3 - _gScriptBase) /* event script*/
+		.endif
+		.else
 		.int \pointer3 /* event script*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_CONTINUE_SCRIPT
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer3, NULL
+		.long 0
+		.else
+		.long (\pointer3 - _gScriptBase) /* event script*/
+		.endif
+		.else
 		.int \pointer3 /* event script*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_DOUBLE
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer3, NULL
+		.long 0
+		.else
+		.long (\pointer3 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer3 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_REMATCH
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer3, NULL
+		.long 0
+		.else
+		.long (\pointer3 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer3 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer4, NULL
+		.long 0
+		.else
+		.long (\pointer4 - _gScriptBase) /* event script*/
+		.endif
+		.else
 		.int \pointer4 /* event script*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_REMATCH_DOUBLE
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer3, NULL
+		.long 0
+		.else
+		.long (\pointer3 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer3 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE_NO_MUSIC
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer3, NULL
+		.long 0
+		.else
+		.long (\pointer3 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer3 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer4, NULL
+		.long 0
+		.else
+		.long (\pointer4 - _gScriptBase) /* event script*/
+		.endif
+		.else
 		.int \pointer4 /* event script*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_PYRAMID
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_SET_TRAINER_A
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_SET_TRAINER_B
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
 	.elseif \type == TRAINER_BATTLE_HILL
+		.ifdef PORTABLE_ASM
+		.ifc \pointer1, NULL
+		.long 0
+		.else
+		.long (\pointer1 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer1 /* text*/
+		.endif
+		.ifdef PORTABLE_ASM
+		.ifc \pointer2, NULL
+		.long 0
+		.else
+		.long (\pointer2 - _gScriptBase) /* text*/
+		.endif
+		.else
 		.int \pointer2 /* text*/
+		.endif
 	.endif
 	.endm
 
@@ -785,8 +1217,11 @@
 
 	/* Starts a single trainer battle. Takes a trainer, intro text, loss text, and an optional event script.*/
 	/* When used with an event script, you can also pass in an optional flag to disable music*/
-	.macro trainerbattle_single trainer:req, intro_text:req, lose_text:req, event_script=FALSE, music=TRUE
-	.if \event_script == FALSE
+	/* event_script defaults to blank rather than FALSE: clang's assembler
+	   cannot evaluate `label == FALSE` (a relocatable compared to an absolute),
+	   whereas .ifb tests argument presence directly and works in both. */
+	.macro trainerbattle_single trainer:req, intro_text:req, lose_text:req, event_script, music=TRUE
+	.ifb \event_script
 	trainerbattle TRAINER_BATTLE_SINGLE, \trainer, LOCALID_NONE, \intro_text, \lose_text
 	.elseif \music == TRUE
 	trainerbattle TRAINER_BATTLE_CONTINUE_SCRIPT, \trainer, LOCALID_NONE, \intro_text, \lose_text, \event_script
@@ -797,8 +1232,8 @@
 
 	/* Starts a double trainer battle. Takes a trainer, intro text, loss text, text for when you have too few pokemon*/
 	/* and an optional event script. When used with an event script you can pass in an optional flag to disable music*/
-	.macro trainerbattle_double trainer:req, intro_text:req, lose_text:req, not_enough_pkmn_text:req, event_script=FALSE, music=TRUE
-	.if \event_script == FALSE
+	.macro trainerbattle_double trainer:req, intro_text:req, lose_text:req, not_enough_pkmn_text:req, event_script, music=TRUE
+	.ifb \event_script
 	trainerbattle TRAINER_BATTLE_DOUBLE, \trainer, LOCALID_NONE, \intro_text, \lose_text, \not_enough_pkmn_text
 	.elseif \music == TRUE
 	trainerbattle TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE, \trainer, LOCALID_NONE, \intro_text, \lose_text, \not_enough_pkmn_text, \event_script
@@ -891,7 +1326,15 @@
 	/* a pointer to the text. The 'loadword 0' in msgbox sets this value, for instance.*/
 	.macro message text:req
 	.byte SCR_OP_MESSAGE
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Closes the current message box.*/
@@ -1016,7 +1459,15 @@
 	/* bytes determined the box's size and position, but in Emerald these are calculated automatically).*/
 	.macro braillemessage text:req
 	.byte SCR_OP_BRAILLEMESSAGE
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Formatting for the braille window, to be put at the start of a pointer used by braillemessage.*/
@@ -1144,14 +1595,30 @@
 	.macro bufferstring stringVarId:req, text:req
 	.byte SCR_OP_BUFFERSTRING
 	stringvar \stringVarId
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Opens the Pokemart system, offering the specified products for sale.*/
 	/* Products should be a list of .short item values preceded by an .align 2*/
 	.macro pokemart products:req
 	.byte SCR_OP_POKEMART
+	.ifdef PORTABLE_ASM
+	.ifc \products, NULL
+	.long 0
+	.else
+	.long (\products - _gScriptBase)
+	.endif
+	.else
 	.int \products
+	.endif
 	.endm
 
 	@ Used as the endpoint for a Pokemart item list
@@ -1165,13 +1632,29 @@
 	@ Products should be a list of .short decoration values preceded by an .align 2
 	.macro pokemartdecoration products:req
 	.byte SCR_OP_POKEMARTDECORATION
+	.ifdef PORTABLE_ASM
+	.ifc \products, NULL
+	.long 0
+	.else
+	.long (\products - _gScriptBase)
+	.endif
+	.else
 	.int \products
+	.endif
 	.endm
 
 	/* Identical to pokemartdecoration, but with slight changes to the clerk dialogue. See uses of MART_TYPE_DECOR2.*/
 	.macro pokemartdecoration2 products:req
 	.byte SCR_OP_POKEMARTDECORATION2
+	.ifdef PORTABLE_ASM
+	.ifc \products, NULL
+	.long 0
+	.else
+	.long (\products - _gScriptBase)
+	.endif
+	.else
 	.int \products
+	.endif
 	.endm
 
 	/* Starts up the slot machine minigame. id is a SLOT_MACHINE_* value that influences probabilities of certain reel outcomes.*/
@@ -1300,7 +1783,15 @@
 	/* Automatically scrolls through the message without player input and at a fixed speed.*/
 	.macro messageautoscroll text:req
 	.byte SCR_OP_MESSAGEAUTOSCROLL
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Executes the specified field effect animation (FLDEFF_*).*/
@@ -1500,52 +1991,116 @@
 	/* Sets a relative address to be used by the other vcommands as part of a Mystery Gift script.*/
 	.macro setvaddress pointer:req
 	.byte SCR_OP_SETVADDRESS
+	.ifdef PORTABLE_ASM
+	.ifc \pointer, NULL
+	.long 0
+	.else
+	.long (\pointer - _gScriptBase)
+	.endif
+	.else
 	.int \pointer
+	.endif
 	.endm
 
 	/* Equivalent to goto using the relative address set by setvaddress.*/
 	.macro vgoto destination:req
 	.byte SCR_OP_VGOTO
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Equivalent to call using the relative address set by setvaddress.*/
 	.macro vcall destination:req
 	.byte SCR_OP_VCALL
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Equivalent to goto_if using the relative address set by setvaddress.*/
 	.macro vgoto_if condition:req, destination:req
 	.byte SCR_OP_VGOTO_IF
 	.byte \condition
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Equivalent to call_if using the relative address set by setvaddress.*/
 	.macro vcall_if condition:req, destination:req
 	.byte SCR_OP_VCALL_IF
 	.byte \condition
+	.ifdef PORTABLE_ASM
+	.ifc \destination, NULL
+	.long 0
+	.else
+	.long (\destination - _gScriptBase)
+	.endif
+	.else
 	.int \destination
+	.endif
 	.endm
 
 	/* Equivalent to message using the relative address set by setvaddress.*/
 	.macro vmessage text:req
 	.byte SCR_OP_VMESSAGE
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Expands the given text at the pointer (- the relative address set by setvaddress) into gStringVar4*/
 	.macro vbuffermessage text:req
 	.byte SCR_OP_VBUFFERMESSAGE
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Equivalent to bufferstring using the relative address set by setvaddress.*/
 	.macro vbufferstring stringVarIndex:req, text:req
 	.byte SCR_OP_VBUFFERSTRING
 	stringvar \stringVarIndex
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Create a window showing how many Coins the player has.*/
@@ -1604,7 +2159,15 @@
 	/* Used only in FireRed/LeafGreen, does nothing in Emerald.*/
 	.macro loadhelp text:req
 	.byte SCR_OP_LOADHELP
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Used only in FireRed/LeafGreen, does nothing in Emerald.*/
@@ -1724,7 +2287,15 @@
 	/* Does not wait for player input to continue.*/
 	.macro messageinstant text:req
 	.byte SCR_OP_MESSAGEINSTANT
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Equivalent to fadescreen but copies gPlttBufferUnfaded to gPaletteDecompressionBuffer on the fade out*/
@@ -1753,7 +2324,15 @@
 	/* Starts a Pokenav call with the given text.*/
 	.macro pokenavcall text:req
 	.byte SCR_OP_POKENAVCALL
+	.ifdef PORTABLE_ASM
+	.ifc \text, NULL
+	.long 0
+	.else
+	.long (\text - _gScriptBase)
+	.endif
+	.else
 	.int \text
+	.endif
 	.endm
 
 	/* Warp with a fade to white. Used during the Sootopolis legendary fight.*/

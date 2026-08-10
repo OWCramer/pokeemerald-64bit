@@ -1,6 +1,7 @@
 #ifdef PORTABLE
 #include "global.h"
 #include "platform/dma.h"
+#include <stdint.h>
 
 struct DMATransfer {
     union {
@@ -15,6 +16,11 @@ struct DMATransfer {
     };
     u32 size;
     u16 control;
+    // On a 64-bit host a real pointer does not fit in the 32-bit emulated
+    // DMAxSAD/DMAxDAD registers, so DMA_DEST_RELOAD keeps its own copy here
+    // instead of reading the address back out of the register file.
+    const void *srcReload;
+    void *dstReload;
 } DMAList[DMA_COUNT];
 
 void RunDMAs(u32 type)
@@ -78,7 +84,7 @@ void RunDMAs(u32 type)
                 dma->size = ((&REG_DMA0CNT)[dmaNum * 3] & 0x1FFFF);
                 if (((dma->control) & DMA_DEST_MASK) == DMA_DEST_RELOAD)
                 {
-                    dma->dst = ((&REG_DMA0DAD)[dmaNum * 3]);
+                    dma->dst = dma->dstReload;
                 }
             }
             else
@@ -97,13 +103,17 @@ void DmaSet(int dmaNum, const void *src, void *dest, u32 control)
         return;
     }
 
-    (&REG_DMA0SAD)[dmaNum * 3] = src;
-    (&REG_DMA0DAD)[dmaNum * 3] = dest;
+    // The registers keep only the low 32 bits so reads still observe something
+    // address-like; the authoritative pointers live in the DMATransfer.
+    (&REG_DMA0SAD)[dmaNum * 3] = (u32)(uintptr_t)src;
+    (&REG_DMA0DAD)[dmaNum * 3] = (u32)(uintptr_t)dest;
     (&REG_DMA0CNT)[dmaNum * 3] = control;
 
     struct DMATransfer *dma = &DMAList[dmaNum];
     dma->src = src;
     dma->dst = dest;
+    dma->srcReload = src;
+    dma->dstReload = dest;
     dma->size = control & 0x1ffff;
     dma->control = control >> 16;
 

@@ -95,7 +95,12 @@ struct GFRomHeader
 
 // This seems to need to be in the text section for some reason.
 // To avoid a changed section attributes warning it's put in a special .text.consts section.
+#ifdef __APPLE__
+// Mach-O section specifiers are "segment,section" rather than an ELF name.
+__attribute__((section("__TEXT,__const")))
+#else
 __attribute__((section(".text.consts")))
+#endif
 static const struct GFRomHeader sGFRomHeader = {
     .version = GAME_VERSION,
     .language = GAME_LANGUAGE,

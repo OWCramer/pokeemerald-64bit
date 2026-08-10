@@ -1,6 +1,6 @@
 CXX ?= g++
 
-CXXFLAGS := -std=c++11 -O2 -Wall -Wno-switch -Werror
+CXXFLAGS := -std=c++11 -O2 -Wall -Wno-switch -Wno-unused-but-set-variable -Werror
 
 SRCS := agb.cpp error.cpp main.cpp midi.cpp tables.cpp
 

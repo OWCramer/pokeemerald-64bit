@@ -37,8 +37,10 @@
 #endif
 
 /// IDE support
-#if defined(__APPLE__) || defined(__CYGWIN__) || defined(__INTELLISENSE__)
+#if (defined(__APPLE__) || defined(__CYGWIN__) || defined(__INTELLISENSE__)) && !defined(NATIVE_BUILD)
 // We define these when using certain IDEs to fool preproc
+// NATIVE_BUILD opts out: when actually compiling on macOS these stubs would
+// clobber preproc's real _()/INCBIN handling and clash with clang's builtins.
 #define _(x)        {x}
 #define __(x)       {x}
 #define INCBIN(...) {0}
@@ -131,13 +133,30 @@ int strcmp(const char *, const char*);
 #define T1_READ_8(ptr)  ((ptr)[0])
 #define T1_READ_16(ptr) ((ptr)[0] | ((ptr)[1] << 8))
 #define T1_READ_32(ptr) ((ptr)[0] | ((ptr)[1] << 8) | ((ptr)[2] << 16) | ((ptr)[3] << 24))
+#ifdef NATIVE_BUILD
+// A 64-bit host cannot hold a real pointer in the 4 bytes the script bytecode
+// reserves, and Mach-O has no 32-bit absolute relocation. Instead the assembler
+// stores a signed offset from gScriptBase and the readers rebase it here, which
+// keeps every hardcoded instruction stride in the script engines valid.
+extern const u8 gScriptBase[];
+// Offset 0 is the anchor itself, never a real script, so it encodes NULL --
+// matching the `scriptptr` assembler macro, which stores 0 for a null script.
+#define SCRIPT_REBASE(v) ((s32)(v) ? (u8 *)gScriptBase + (s32)(v) : (u8 *)0)
+#define T1_READ_PTR(ptr) SCRIPT_REBASE(T1_READ_32(ptr))
+#else
 #define T1_READ_PTR(ptr) (u8 *) T1_READ_32(ptr)
+#endif
 
 // T2_READ_8 is a duplicate to remain consistent with each group.
 #define T2_READ_8(ptr)  ((ptr)[0])
 #define T2_READ_16(ptr) ((ptr)[0] + ((ptr)[1] << 8))
 #define T2_READ_32(ptr) ((ptr)[0] + ((ptr)[1] << 8) + ((ptr)[2] << 16) + ((ptr)[3] << 24))
+#ifdef NATIVE_BUILD
+#define T2_READ_PTR(ptr) ((void *)SCRIPT_REBASE(T2_READ_32(ptr)))
+#else
+#define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
+#endif
 
 #define PACK(data, shift, mask)   ( ((data) << (shift)) & (mask) )
 #define UNPACK(data, shift, mask) ( ((data) & (mask)) >> (shift) )

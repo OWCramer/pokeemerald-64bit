@@ -1,10 +1,22 @@
 #ifndef GUARD_GBA_FLASH_INTERNAL_H
 #define GUARD_GBA_FLASH_INTERNAL_H
 
+// Size of the emulated flash backing store. The native 64-bit build needs a
+// fifth SaveBlock1 sector (see save.h), which pushes past a real 128 KiB chip.
+#ifdef NATIVE_BUILD
+#define FLASH_BACKING_SIZE (34 * 4096)
+#else
+#define FLASH_BACKING_SIZE 131072
+#endif
+
+// Defined in agb_flash.c for the GBA build; src/stub.c supplies them under PORTABLE.
+u32 VerifyFlashSector(u16 sectorNum, u8 *src);
+u32 VerifyFlashSectorNBytes(u16 sectorNum, u8 *src, u32 n);
+
 #ifndef PORTABLE
 #define FLASH_BASE ((u8 *)0xE000000)
 #else
-extern unsigned char FLASH_BASE[131072];
+extern unsigned char FLASH_BASE[FLASH_BACKING_SIZE];
 #endif
 
 #define FLASH_WRITE(addr, data) ((*(vu8 *)(FLASH_BASE + (addr))) = (data))
@@ -85,6 +97,6 @@ u16 WaitForFlashWrite_DUMMY(u8 phase, u8 *addr, u8 lastData);
 u16 EraseFlashChip_DUMMY(void);
 u16 EraseFlashSector_DUMMY(u16 sectorNum);
 u16 ProgramFlashByte_DUMMY(u16 sectorNum, u32 offset, u8 data);
-u16 ProgramFlashSector_DUMMY(u16 sectorNum, void *src);
+u16 ProgramFlashSector_DUMMY(u16 sectorNum, u8 *src);
 
 #endif // GUARD_GBA_FLASH_INTERNAL_H

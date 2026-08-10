@@ -8,6 +8,15 @@
 
 #define RAM_SCRIPT_MAGIC 51
 
+#ifdef NATIVE_BUILD
+// Anchor for script bytecode pointers. The assembler stores every inline
+// pointer as a signed 32-bit offset from this symbol (see SCRIPT_REBASE in
+// global.h); offsets stay well inside 2 GB because all script data lives in
+// this image. Offset 0 addresses the anchor itself, never a real script, so it
+// doubles as the NULL encoding.
+const u8 gScriptBase[1] = {0};
+#endif
+
 enum {
     SCRIPT_MODE_STOPPED,
     SCRIPT_MODE_BYTECODE,

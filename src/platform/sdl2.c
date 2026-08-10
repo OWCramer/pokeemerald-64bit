@@ -110,7 +110,10 @@ int main(int argc, char **argv)
     SDL_AudioSpec want;
 
     SDL_memset(&want, 0, sizeof(want)); /* or SDL_zero(want) */
-    want.freq = 42048;
+    // 701 PCM samples are generated per V-blank (SampleFreqSet) and V-blank runs
+    // at 60Hz, so the mixer actually produces 701 * 60 = 42060 Hz. Opening the
+    // device at 42048 left a 12Hz mismatch, so the queue slowly drifted.
+    want.freq = 42060;
     want.format = AUDIO_F32;
     want.channels = 2;
     want.samples = 1024;
@@ -139,6 +142,8 @@ int main(int argc, char **argv)
     {
         ProcessEvents();
 
+        bool32 didRender = FALSE;
+
         if (!paused)
         {
             double dt = fixedTimestep / timeScale; // TODO: Fix speedup
@@ -158,6 +163,7 @@ int main(int argc, char **argv)
                     VDraw(sdlTexture);
                     SDL_RenderClear(sdlRenderer);
                     SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
+                    didRender = TRUE;
                     SDL_AtomicSet(&isFrameAvailable, 0);
 
                     REG_DISPSTAT |= INTR_FLAG_VBLANK;
@@ -181,7 +187,14 @@ int main(int argc, char **argv)
             videoScaleChanged = false;
         }
 
-        SDL_RenderPresent(sdlRenderer);
+        // Only present frames that were actually drawn. This loop spins faster
+        // than the emulated 60Hz, and presenting on an iteration where nothing
+        // was copied swaps in an undrawn back buffer -- which shows as a black
+        // flicker every few frames.
+        if (didRender)
+            SDL_RenderPresent(sdlRenderer);
+        else
+            SDL_Delay(1); // vsync in RenderPresent used to pace this loop
     }
 
     //StoreSaveFile();
@@ -256,6 +269,87 @@ void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 
 void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
 {
+#ifdef NATIVE_BUILD
+    // EMERALD_DUMP_WAV=<file> captures the exact buffer handed to SDL as a
+    // 32-bit float stereo WAV. This is the ground truth for audio work: it is
+    // the same data the device plays, so it can be analysed offline instead of
+    // reasoned about. The header is rewritten on each flush so a file killed
+    // mid-run is still playable.
+    {
+        static int checked; static FILE *wav; static unsigned long dataBytes;
+        if (!checked) {
+            checked = 1;
+            const char *path = getenv("EMERALD_DUMP_WAV");
+            if (path && (wav = fopen(path, "wb"))) {
+                unsigned char h[44] = {0};
+                memcpy(h, "RIFF", 4); memcpy(h + 8, "WAVEfmt ", 8);
+                h[16] = 16; h[20] = 3; h[22] = 2;          // IEEE float, stereo
+                unsigned rate = 42060, bps = rate * 2 * 4;
+                memcpy(h + 24, &rate, 4); memcpy(h + 28, &bps, 4);
+                h[32] = 8; h[34] = 32;                      // block align, bits
+                memcpy(h + 36, "data", 4);
+                fwrite(h, 1, 44, wav);
+            }
+        }
+        if (wav) {
+            fwrite(audioBuffer, 1, (size_t)samplesPerFrame, wav);
+            dataBytes += (unsigned long)samplesPerFrame;
+            unsigned d = (unsigned)dataBytes, r = d + 36;
+            fseek(wav, 4, SEEK_SET);  fwrite(&r, 4, 1, wav);
+            fseek(wav, 40, SEEK_SET); fwrite(&d, 4, 1, wav);
+            fseek(wav, 0, SEEK_END);
+            fflush(wav);
+        }
+    }
+    // EMERALD_AUDIO_STATS=1 measures the buffer actually handed to SDL, which
+    // is the only place guaranteed to be the real output. AUDIO_F32 expects
+    // samples in -1..1; anything beyond that is clipped by the device and
+    // sounds like harsh distortion.
+    {
+        static int checked, on; static unsigned n; static float peak; static unsigned clipped;
+        if (!checked) { checked = 1; on = getenv("EMERALD_AUDIO_STATS") != NULL; }
+        if (on) {
+            s32 count = samplesPerFrame / (s32)sizeof(float);
+            for (s32 k = 0; k < count; k++) {
+                float a = audioBuffer[k] < 0 ? -audioBuffer[k] : audioBuffer[k];
+                if (a > peak) peak = a;
+                if (a > 1.0f) clipped++;
+            }
+            static Uint32 t0; static unsigned calls; static unsigned long bytes;
+            calls++; bytes += (unsigned long)samplesPerFrame;
+            if (t0 == 0) t0 = SDL_GetTicks();
+            if (++n % 60 == 0) {
+                Uint32 now = SDL_GetTicks();
+                double secs = (now - t0) / 1000.0;
+                // 42060 Hz * 2 channels * 4 bytes = 336480 bytes/sec required
+                printf("queued: peak=%.3f clipped=%u | %.1f calls/s %.0f B/s (need 336480) | sdlQueue=%u B\n",
+                       peak, clipped, calls / secs, bytes / secs,
+                       (unsigned)SDL_GetQueuedAudioSize(1));
+                fflush(stdout);
+                peak = 0; clipped = 0; calls = 0; bytes = 0; t0 = now;
+            }
+        }
+    }
+#endif
+#ifdef NATIVE_BUILD
+    // The game's frame clock and the audio device clock are independent, so the
+    // queue drifts: measured ~0.15%, which is ~0.9s of added latency over ten
+    // minutes -- audio would visibly lag video in a long session. Correct it by
+    // varying the frame length by a single sample, which is 1/701 = 0.14% and
+    // inaudible, rather than dropping whole frames (a click) or resampling.
+    {
+        s32 bytes = samplesPerFrame;
+        u32 queued = SDL_GetQueuedAudioSize(1);
+        const u32 frame = 701 * 2 * sizeof(float);
+        const u32 target = 3 * frame;          // ~50ms of buffer
+        if (queued > target + frame / 2 && bytes >= (s32)(2 * sizeof(float)))
+            bytes -= 2 * sizeof(float);        // one stereo sample short
+        else if (queued < target - frame / 2)
+            SDL_QueueAudio(1, audioBuffer, 2 * sizeof(float));  // one sample long
+        SDL_QueueAudio(1, audioBuffer, bytes);
+        return;
+    }
+#endif
     SDL_QueueAudio(1, audioBuffer, samplesPerFrame);
 }
 
@@ -450,8 +544,48 @@ void VDraw(SDL_Texture *texture)
 {
     static uint16_t image[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 
+#ifdef EMULATED_MEM_GUARDS
+    {
+        static int inited;
+        extern void GbaGuardsInit(void);
+        extern void GbaGuardsCheck(const char *);
+        if (!inited) { GbaGuardsInit(); inited = 1; }
+        GbaGuardsCheck("VDraw");
+    }
+#endif
     memset(image, 0, sizeof(image));
     DrawFrame(image);
+#ifdef NATIVE_BUILD
+    // Headless verification: EMERALD_DUMP_FRAME=<n> writes frame n to
+    // EMERALD_DUMP_PATH (default frame.ppm) so rendering can be checked
+    // without a display server.
+    {
+        extern char *getenv(const char *);
+        extern int atoi(const char *);
+        static long frame = 0;
+        static int want = -2;
+        if (want == -2) { const char *e = getenv("EMERALD_DUMP_FRAME"); want = e ? atoi(e) : -1; }
+        if (want >= 0 && frame == want) {
+            const char *path = getenv("EMERALD_DUMP_PATH");
+            FILE *f = fopen(path ? path : "frame.ppm", "wb");
+            if (f) {
+                fprintf(f, "P6\n%d %d\n255\n", DISPLAY_WIDTH, DISPLAY_HEIGHT);
+                for (int i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i++) {
+                    uint16_t v = image[i];            // ABGR1555: R low, B high
+                    unsigned char rgb[3] = {
+                        (unsigned char)((v & 0x1F) << 3),
+                        (unsigned char)(((v >> 5) & 0x1F) << 3),
+                        (unsigned char)(((v >> 10) & 0x1F) << 3) };
+                    fwrite(rgb, 1, 3, f);
+                }
+                fclose(f);
+                printf("dumped frame %ld\n", frame);
+                fflush(stdout);
+            }
+        }
+        frame++;
+    }
+#endif
     SDL_UpdateTexture(texture, NULL, image, DISPLAY_WIDTH * sizeof (Uint16));
     REG_VCOUNT = 161; // prep for being in VBlank period
 }
