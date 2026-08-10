@@ -30,6 +30,7 @@ void Platform_CancelRebind(void);
 void Platform_ResetBindings(void);
 void Platform_SaveBindings(void);
 bool8 Platform_HasBindConflict(void);
+bool8 Platform_ConflictIsProtected(void);
 void Platform_GetConflictText(char *out, int outSize);
 void Platform_ResolveBindConflict(bool8 replace);
 

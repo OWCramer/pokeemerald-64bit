@@ -109,6 +109,20 @@ static void AsciiToGameText(const char *src, u8 *dst, int dstSize)
         else if (c == '.')             dst[i] = CHAR_PERIOD;
         else if (c == '?')             dst[i] = CHAR_QUESTION_MARK;
         else if (c == '\n')            dst[i] = CHAR_NEWLINE;
+        // The font carries more punctuation than first assumed; '+' rendering
+        // as '?' in "CTRL+L" was this list being too short, not a missing glyph.
+        else if (c == '+')             dst[i] = CHAR_PLUS;
+        else if (c == '=')             dst[i] = CHAR_EQUALS;
+        else if (c == ';')             dst[i] = CHAR_SEMICOLON;
+        else if (c == ',')             dst[i] = CHAR_COMMA;
+        else if (c == ':')             dst[i] = CHAR_COLON;
+        else if (c == '!')             dst[i] = CHAR_EXCL_MARK;
+        else if (c == '&')             dst[i] = CHAR_AMPERSAND;
+        else if (c == '%')             dst[i] = CHAR_PERCENT;
+        else if (c == '(')             dst[i] = CHAR_LEFT_PAREN;
+        else if (c == ')')             dst[i] = CHAR_RIGHT_PAREN;
+        else if (c == '<')             dst[i] = CHAR_LESS_THAN;
+        else if (c == '>')             dst[i] = CHAR_GREATER_THAN;
         else                           dst[i] = CHAR_QUESTION_MARK;
     }
     dst[i] = EOS;
@@ -408,6 +422,22 @@ static void DrawControlsPage(void)
 
 static void Task_ConflictDialog(u8 taskId)
 {
+    if (Platform_ConflictIsProtected())
+    {
+        if (!JOY_NEW(A_BUTTON) && !JOY_NEW(B_BUTTON))
+            return;
+        PlaySE(SE_SELECT);
+        Platform_ResolveBindConflict(FALSE);
+        EraseDialogFrame();
+        ClearStdWindowAndFrame(WIN_DIALOG, FALSE);
+        ClearWindowTilemap(WIN_DIALOG);
+        PutWindowTilemap(WIN_OPTIONS);
+        DrawControlsPage();
+        CopyBgTilemapBufferToVram(0);
+        gTasks[taskId].func = Task_ControlsMenu;
+        return;
+    }
+
     switch (Menu_ProcessInputNoWrapClearOnChoose())
     {
     case 0: // YES -- take the input from the other action
@@ -479,7 +509,10 @@ static void Task_ControlsMenu(u8 taskId)
         // 0x1A2 is the menu's own 3x3 frame set and palette 7 is the frame palette
         // it already loads, so the box matches the rest of the screen and needs
         // no tile block of its own.
-        CreateYesNoMenu(&sConflictYesNo, 0x1A2, 7, 1);
+        // A protected clash cannot be resolved either way, so it gets a plain
+        // acknowledgement rather than a choice that has only one valid answer.
+        if (!Platform_ConflictIsProtected())
+            CreateYesNoMenu(&sConflictYesNo, 0x1A2, 7, 1);
         gTasks[taskId].func = Task_ConflictDialog;
         return;
     }
