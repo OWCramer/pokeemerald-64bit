@@ -491,7 +491,7 @@ void Platform_CancelRebind(void) { SDL_SetAtomicInt(&sRebindIndex, -1); }
 void Platform_SaveBindings(void) { SaveBindings(); }
 bool8 Platform_HasBindConflict(void) { return SDL_GetAtomicInt(&sConflictIndex) >= 0; }
 
-// "Z USED BY L" -- what the pending input is, and which action already has it.
+// "Z IS USED BY L. OVERRIDE?" -- what the pending input is and who holds it.
 void Platform_GetConflictText(char *out, int outSize)
 {
     int c = SDL_GetAtomicInt(&sConflictIndex);
@@ -500,7 +500,7 @@ void Platform_GetConflictText(char *out, int outSize)
     const char *what = sPendingKey != SDLK_UNKNOWN
                      ? SDL_GetKeyName(sPendingKey)
                      : SDL_GetGamepadStringForButton((SDL_GamepadButton)sPendingPad);
-    snprintf(out, outSize, "%s USED BY %s", what ? what : "?", sBindings[c].name);
+    snprintf(out, outSize, "%s IS USED BY %s.\nOVERRIDE?", what ? what : "?", sBindings[c].name);
 }
 
 void Platform_ResolveBindConflict(bool8 replace)
@@ -712,6 +712,8 @@ void ProcessEvents(void)
             {
                 if (event.key.key == SDLK_ESCAPE)
                     Platform_CancelRebind();
+                else if (event.key.key == SDLK_F1)
+                    Platform_CancelRebind();   // reserved, never bindable
                 else
                     ApplyRebind(event.key.key, -1);
                 break;
@@ -720,6 +722,14 @@ void ProcessEvents(void)
             {
                 if (sBindings[i].key != SDLK_UNKNOWN && event.key.key == sBindings[i].key)
                     keys |= sBindings[i].gbaKey;
+            }
+            // Emergency escape hatch: F1 is deliberately not bindable, so a set
+            // of bindings that has left the game unplayable -- unbinding A, say
+            // -- can always be undone without editing files.
+            if (event.key.key == SDLK_F1)
+            {
+                Platform_ResetBindings();
+                break;
             }
             if (event.key.key == SDLK_R && (event.key.mod & SDL_KMOD_CTRL))
                 SDL_SetAtomicInt(&sResetRequested, 1);

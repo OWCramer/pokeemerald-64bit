@@ -1,5 +1,7 @@
 #include "global.h"
 #include "platform.h"
+#include "constants/songs.h"
+#include "sound.h"
 #include "option_menu.h"
 #include "bg.h"
 #include "gpu_regs.h"
@@ -41,7 +43,8 @@ enum
 enum
 {
     WIN_HEADER,
-    WIN_OPTIONS
+    WIN_OPTIONS,
+    WIN_DIALOG
 };
 
 // The list scrolls rather than being squeezed: eight items no longer fit the
@@ -70,6 +73,25 @@ static const u8 sText_PressInput[] = _("PRESS INPUT");
 static const u8 sText_CtrlHint[]   = _("A BIND  SELECT RESET  B BACK");
 static const u8 sText_Replace[]    = _("REPLACE?  A YES  B NO");
 static bool8 sWasRebinding;
+// The A press that opens the subpage is still "new" when the subpage's task runs
+// on that same frame, so without this it immediately began a rebind of the first
+// action -- the conflict dialog appeared before the player touched anything.
+static bool8 sIgnoreInputFrame;
+
+static const struct WindowTemplate sConflictYesNo =
+{
+    .bg = 0,
+    .tilemapLeft = 22,
+    .tilemapTop = 9,
+    .width = 5,
+    .height = 4,
+    .paletteNum = 1,
+    .baseBlock = 0x250,
+};
+
+static void Task_ConflictDialog(u8 taskId);
+static void DrawDialogFrame(void);
+static void EraseDialogFrame(void);
 
 // The game renders its own charmap, so SDL's key names need translating.
 static void AsciiToGameText(const char *src, u8 *dst, int dstSize)
@@ -84,6 +106,9 @@ static void AsciiToGameText(const char *src, u8 *dst, int dstSize)
         else if (c == ' ')             dst[i] = CHAR_SPACE;
         else if (c == '/')             dst[i] = CHAR_SLASH;
         else if (c == '-')             dst[i] = CHAR_HYPHEN;
+        else if (c == '.')             dst[i] = CHAR_PERIOD;
+        else if (c == '?')             dst[i] = CHAR_QUESTION_MARK;
+        else if (c == '\n')            dst[i] = CHAR_NEWLINE;
         else                           dst[i] = CHAR_QUESTION_MARK;
     }
     dst[i] = EOS;
@@ -151,6 +176,19 @@ static const struct WindowTemplate sOptionMenuWinTemplates[] =
         .paletteNum = 1,
         .baseBlock = 0x36
     },
+    // Conflict prompt. WIN_OPTIONS ends at 0x36 + 26*14 = 0x1A2, and the menu's
+    // own frame tiles (TILE_TOP_CORNER_L..TILE_BOT_CORNER_R) occupy 0x1A2..0x1AA,
+    // so this has to start past those or it overwrites the borders.
+    // Layout from here: dialog 0x1B0..0x218, its frame gfx 0x220, yes/no 0x230.
+    [WIN_DIALOG] = {
+        .bg = 0,
+        .tilemapLeft = 2,
+        .tilemapTop = 14,
+        .width = 26,
+        .height = 5,
+        .paletteNum = 1,
+        .baseBlock = 0x1B0
+    },
     DUMMY_WIN_TEMPLATE
 };
 
@@ -207,6 +245,9 @@ void CB2_InitOptionMenu(void)
         sScrollOffset = 0;
         sBindIndex = 0;
         sWasRebinding = FALSE;
+        sIgnoreInputFrame = FALSE;
+        Platform_CancelRebind();
+        Platform_ResolveBindConflict(FALSE);
         SetVBlankCallback(NULL);
         gMain.state++;
         break;
@@ -352,12 +393,7 @@ static void DrawControlsPage(void)
         {
             AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sText_PressInput, 104, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
         }
-        else if (Platform_HasBindConflict() && idx == sBindIndex)
-        {
-            Platform_GetConflictText(ascii, sizeof(ascii));
-            AsciiToGameText(ascii, text, sizeof(text));
-            AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, text, 104, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
-        }
+
         else
         {
             Platform_GetBindLabel(idx, ascii, sizeof(ascii));
@@ -365,16 +401,48 @@ static void DrawControlsPage(void)
             AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, text, 104, i * 16 + 1, TEXT_SKIP_DRAW, NULL);
         }
     }
-    if (Platform_HasBindConflict())
-        AddTextPrinterParameterized(WIN_OPTIONS, FONT_NORMAL, sText_Replace, 8, VISIBLE_ROWS * 16 + 1, TEXT_SKIP_DRAW, NULL);
-
     SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(16, DISPLAY_WIDTH - 16));
     SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE((sBindIndex - first) * 16 + 40, (sBindIndex - first) * 16 + 56));
     CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
 }
 
+static void Task_ConflictDialog(u8 taskId)
+{
+    switch (Menu_ProcessInputNoWrapClearOnChoose())
+    {
+    case 0: // YES -- take the input from the other action
+        PlaySE(SE_SELECT);
+        Platform_ResolveBindConflict(TRUE);
+        break;
+    case 1: // NO
+    case MENU_B_PRESSED:
+        PlaySE(SE_SELECT);
+        Platform_ResolveBindConflict(FALSE);
+        break;
+    default:
+        return; // still choosing
+    }
+
+    // The dialog and the yes/no box overlap WIN_OPTIONS, and all three share one
+    // BG tilemap -- clearing them blanks that region rather than revealing what
+    // was underneath, so the options window has to be put back and redrawn.
+    ClearStdWindowAndFrame(WIN_DIALOG, FALSE);
+    ClearWindowTilemap(WIN_DIALOG);
+    EraseDialogFrame();
+    PutWindowTilemap(WIN_OPTIONS);
+    DrawControlsPage();
+    CopyBgTilemapBufferToVram(0);
+    gTasks[taskId].func = Task_ControlsMenu;
+}
+
 static void Task_ControlsMenu(u8 taskId)
 {
+    if (sIgnoreInputFrame)
+    {
+        sIgnoreInputFrame = FALSE;
+        return;
+    }
+
     // Capture freezes input at the platform layer, so just poll until it ends.
     if (Platform_IsRebinding())
     {
@@ -392,20 +460,27 @@ static void Task_ControlsMenu(u8 taskId)
         return;
     }
 
-    // A captured input that belongs to another action waits for confirmation
-    // rather than silently stealing it.
+    // A captured input that belongs to another action asks before stealing it,
+    // using the game's standard framed yes/no rather than bare text.
     if (Platform_HasBindConflict())
     {
-        if (JOY_NEW(A_BUTTON))
-        {
-            Platform_ResolveBindConflict(TRUE);
-            DrawControlsPage();
-        }
-        else if (JOY_NEW(B_BUTTON))
-        {
-            Platform_ResolveBindConflict(FALSE);
-            DrawControlsPage();
-        }
+        char ascii[64];
+        u8 text[64];
+
+        Platform_GetConflictText(ascii, sizeof(ascii));
+        AsciiToGameText(ascii, text, sizeof(text));
+
+        PutWindowTilemap(WIN_DIALOG);
+        DrawDialogFrame();
+        CopyBgTilemapBufferToVram(0);
+        FillWindowPixelBuffer(WIN_DIALOG, PIXEL_FILL(1));
+        AddTextPrinterParameterized(WIN_DIALOG, FONT_NORMAL, text, 4, 1, TEXT_SKIP_DRAW, NULL);
+        CopyWindowToVram(WIN_DIALOG, COPYWIN_FULL);
+        // 0x1A2 is the menu's own 3x3 frame set and palette 7 is the frame palette
+        // it already loads, so the box matches the rest of the screen and needs
+        // no tile block of its own.
+        CreateYesNoMenu(&sConflictYesNo, 0x1A2, 7, 1);
+        gTasks[taskId].func = Task_ConflictDialog;
         return;
     }
 
@@ -462,6 +537,11 @@ static void Task_OptionMenuProcessInput(u8 taskId)
         else if (gTasks[taskId].tMenuSelection == MENUITEM_CONTROLS)
         {
             sBindIndex = 0;
+            sIgnoreInputFrame = TRUE;
+            // Discard anything left pending from a previous visit, or the
+            // dialog reappears the moment the page opens.
+            Platform_CancelRebind();
+            Platform_ResolveBindConflict(FALSE);
             DrawControlsPage();
             gTasks[taskId].func = Task_ControlsMenu;
         }
@@ -851,6 +931,9 @@ static void DrawOptionMenuTexts(void)
     CopyWindowToVram(WIN_OPTIONS, COPYWIN_FULL);
 }
 
+// Framed with the options menu's own tiles rather than the global window
+// border: those are already loaded and already match this screen's palette.
+// Borrowing the user-window gfx is what rendered the prompt as a black box.
 #define TILE_TOP_CORNER_L 0x1A2
 #define TILE_TOP_EDGE     0x1A3
 #define TILE_TOP_CORNER_R 0x1A4
@@ -859,6 +942,30 @@ static void DrawOptionMenuTexts(void)
 #define TILE_BOT_CORNER_L 0x1A8
 #define TILE_BOT_EDGE     0x1A9
 #define TILE_BOT_CORNER_R 0x1AA
+
+static void DrawDialogFrame(void)
+{
+    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_L,  1, 13,  1, 1, 7);
+    FillBgTilemapBufferRect(1, TILE_TOP_EDGE,      2, 13, 26, 1, 7);
+    FillBgTilemapBufferRect(1, TILE_TOP_CORNER_R, 28, 13,  1, 1, 7);
+    FillBgTilemapBufferRect(1, TILE_LEFT_EDGE,     1, 14,  1, 5, 7);
+    FillBgTilemapBufferRect(1, TILE_RIGHT_EDGE,   28, 14,  1, 5, 7);
+    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_L,  1, 19,  1, 1, 7);
+    FillBgTilemapBufferRect(1, TILE_BOT_EDGE,      2, 19, 26, 1, 7);
+    FillBgTilemapBufferRect(1, TILE_BOT_CORNER_R, 28, 19,  1, 1, 7);
+    CopyBgTilemapBufferToVram(1);
+}
+
+// DrawBgWindowFrames only repaints the menu's own edges, so the dialog's top and
+// bottom rows must be cleared explicitly or the border lingers across the list.
+static void EraseDialogFrame(void)
+{
+    FillBgTilemapBufferRect(1, 0, 1, 13, 28, 1, 7);
+    FillBgTilemapBufferRect(1, 0, 1, 19, 28, 1, 7);
+    DrawBgWindowFrames();
+    CopyBgTilemapBufferToVram(1);
+}
+
 
 static void DrawBgWindowFrames(void)
 {
