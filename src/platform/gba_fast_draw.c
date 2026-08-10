@@ -125,11 +125,23 @@ static bool winCheckHorizontalBounds(u16 left, u16 right, u16 xpos)
         return (xpos >= left && xpos < right);
 }
 
+// Read pixel `i` of the current tile row, forward or horizontally flipped.
+// 4bpp packs two pixels per byte and indexes a 16-colour sub-palette; 8bpp is
+// one byte per pixel indexing the full 256-colour palette. These rely on
+// bgtiles/tileLoc/is8bpp being in scope, matching the surrounding style.
+#define TILE_PIXEL_FWD(i) (is8bpp ? bgtiles[tileLoc + (i)] \
+                                  : (((i) & 1) ? (bgtiles[tileLoc + ((i) / 2)] >> 4) \
+                                               : (bgtiles[tileLoc + ((i) / 2)] & 0xF)))
+#define TILE_PIXEL_REV(i) (is8bpp ? bgtiles[tileLoc + (7 - (i))] \
+                                  : (((i) & 1) ? (bgtiles[tileLoc + (3 - ((i) / 2))] & 0xF) \
+                                               : (bgtiles[tileLoc + (3 - ((i) / 2))] >> 4)))
+
 static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs, uint16_t voffs, int lineNum, uint16_t *line, struct scanlineData* scanline, bool windowsEnabled)
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
     unsigned int screenBaseBlock = (control >> 8) & 0x1F;
-    unsigned int bitsPerPixel = 4;//((control >> 7) & 1) ? 8 : 4;
+    unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
+    bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
     unsigned int mapHeight = bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
@@ -164,7 +176,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
-    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * 32) + ((lineTile & 7) * bitsPerPixel)];
+    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
     if (firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
@@ -199,6 +211,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         entry = bgmap[startTileYLoc + (startTileX & 31)];
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
+    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -215,18 +228,18 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
             switch (blendMode) { \
             case 1: \
                 if ((mask[x] & (REG_BLDCNT >> 8))) \
-                    line[x] = alphaBlendColor(pal[(paletteNum << 4) + (pixel)], line[x]) | 0x8000; \
+                    line[x] = alphaBlendColor(pal[palBase + (pixel)], line[x]) | 0x8000; \
                 else \
-                    line[x] = pal[(paletteNum << 4) + (pixel)] | 0x8000;\
+                    line[x] = pal[palBase + (pixel)] | 0x8000;\
                 break; \
             case 2: \
-                line[x] = alphaBrightnessIncrease(pal[(paletteNum << 4) + (pixel)]) | 0x8000; \
+                line[x] = alphaBrightnessIncrease(pal[palBase + (pixel)]) | 0x8000; \
                 break; \
             case 3: \
-                line[x] = alphaBrightnessDecrease(pal[(paletteNum << 4) + (pixel)]) | 0x8000; \
+                line[x] = alphaBrightnessDecrease(pal[palBase + (pixel)]) | 0x8000; \
                 break; } \
         }else{ \
-            line[x] = pal[(paletteNum << 4) + (pixel)] | 0x8000; \
+            line[x] = pal[palBase + (pixel)] | 0x8000; \
         } \
         mask[x] = 1 << bgNum;
     
@@ -247,12 +260,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     {
         for (int i = visibleTilePixels; i < 8; i++)
         {
-            pixel = bgtiles[tileLoc + (3-(i/2))];
-
-            if (i & 1)
-                pixel &= 0xF;
-            else
-                pixel >>= 4;
+            pixel = TILE_PIXEL_REV(i);
 
             //if (pixel != 0)
             writeBgPixelWin(pixel, x)
@@ -263,12 +271,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     {
         for (int i = visibleTilePixels; i < 8; i++)
         {
-            pixel = bgtiles[tileLoc + (i/2)];
-
-            if (i & 1)
-                pixel >>= 4;
-            else
-                pixel &= 0xF;
+            pixel = TILE_PIXEL_FWD(i);
 
             writeBgPixelWin(pixel, x)
             x += 1;
@@ -284,10 +287,31 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
             tileLoc = (tileNum * (bitsPerPixel * 8)) + tileY*bitsPerPixel;
+        if (is8bpp)
+        {
+            // 8bpp: one byte per pixel, so a row is 8 bytes rather than 4.
+            const uint8_t *row8 = &bgtiles[tileLoc];
+            if ((*(const uint32_t *)row8 | *(const uint32_t *)(row8 + 4)) != 0)
+            {
+                if (entry & (1 << 10))
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixelWin(row8[7 - p], x + p) }
+                }
+                else
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixelWin(row8[p], x + p) }
+                }
+            }
+        }
+        else
+        {
         uint32_t pixel32 = *(uint32_t*)&bgtiles[tileLoc];
         if (pixel32 != 0) {
             if (entry & (1 << 10))
@@ -313,6 +337,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
                 writeBgPixelWin(pixel32 >> 28, x+7)
             }
         }
+        }
         x += 8;
     }
     //draw right most tile
@@ -322,6 +347,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -332,12 +358,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixelWin(pixel, x)
@@ -349,12 +370,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-                
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixelWin(pixel, x)
                 x += 1;
@@ -379,7 +395,8 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
     unsigned int screenBaseBlock = (control >> 8) & 0x1F;
-    unsigned int bitsPerPixel = 4;//((control >> 7) & 1) ? 8 : 4;
+    unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
+    bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
     unsigned int mapHeight = bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
@@ -414,7 +431,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
-    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * 32) + ((lineTile & 7) * bitsPerPixel)];
+    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
     if (firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
@@ -449,6 +466,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         entry = bgmap[startTileYLoc + (startTileX & 31)];
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
+    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -460,7 +478,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     //}
     
     #define writeBgPixel(pixel, x)  \
-        line[x] = pal[(paletteNum << 4) + (pixel)] | 0x8000; \
+        line[x] = pal[palBase + (pixel)] | 0x8000; \
         mask[x] = 1 << bgNum;
     
     #define writeBgPixelWin(pixel, x)   \
@@ -481,12 +499,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         {
             for (int i = visibleTilePixels; i < 8; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixelWin(pixel, x)
@@ -497,12 +510,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         {
             for (int i = visibleTilePixels; i < 8; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixelWin(pixel, x)
                 x += 1;
@@ -519,10 +527,31 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
             tileLoc = (tileNum * (bitsPerPixel * 8)) + tileY*bitsPerPixel;
+        if (is8bpp)
+        {
+            // 8bpp: one byte per pixel, so a row is 8 bytes rather than 4.
+            const uint8_t *row8 = &bgtiles[tileLoc];
+            if ((*(const uint32_t *)row8 | *(const uint32_t *)(row8 + 4)) != 0)
+            {
+                if (entry & (1 << 10))
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixelWin(row8[7 - p], x + p) }
+                }
+                else
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixelWin(row8[p], x + p) }
+                }
+            }
+        }
+        else
+        {
         uint32_t pixel32 = *(uint32_t*)&bgtiles[tileLoc];
         if (pixel32 != 0) {
             if (entry & (1 << 10))
@@ -548,6 +577,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
                 writeBgPixelWin(pixel32 >> 28, x+7)
             }
         }
+        }
         x += 8;
     }
     //draw right most tile
@@ -557,6 +587,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -567,12 +598,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixelWin(pixel, x)
@@ -584,12 +610,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-                
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixelWin(pixel, x)
                 x += 1;
@@ -614,7 +635,8 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
     unsigned int screenBaseBlock = (control >> 8) & 0x1F;
-    unsigned int bitsPerPixel = 4;//((control >> 7) & 1) ? 8 : 4;
+    unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
+    bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
     unsigned int mapHeight = bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
@@ -649,7 +671,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
-    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * 32) + ((lineTile & 7) * bitsPerPixel)];
+    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
     if (firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
@@ -684,6 +706,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         entry = bgmap[startTileYLoc + (startTileX & 31)];
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
+    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -699,15 +722,15 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         switch (blendMode) {\
         case 1: \
             if ((mask[x] & (REG_BLDCNT >> 8))) \
-                line[x] = alphaBlendColor(pal[(paletteNum << 4) + (pixel)], line[x]) | 0x8000; \
+                line[x] = alphaBlendColor(pal[palBase + (pixel)], line[x]) | 0x8000; \
             else \
-                line[x] = pal[(paletteNum << 4) + (pixel)] | 0x8000;\
+                line[x] = pal[palBase + (pixel)] | 0x8000;\
             break; \
         case 2: \
-            line[x] = alphaBrightnessIncrease(pal[(paletteNum << 4) + (pixel)]) | 0x8000; \
+            line[x] = alphaBrightnessIncrease(pal[palBase + (pixel)]) | 0x8000; \
             break; \
         case 3: \
-            line[x] = alphaBrightnessDecrease(pal[(paletteNum << 4) + (pixel)]) | 0x8000; \
+            line[x] = alphaBrightnessDecrease(pal[palBase + (pixel)]) | 0x8000; \
             break; } \
         mask[x] = 1 << bgNum; \
     }
@@ -723,12 +746,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         {
             for (int i = visibleTilePixels; i < 8; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixel(pixel, x)
@@ -739,12 +757,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         {
             for (int i = visibleTilePixels; i < 8; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixel(pixel, x)
                 x += 1;
@@ -761,10 +774,31 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
             tileLoc = (tileNum * (bitsPerPixel * 8)) + tileY*bitsPerPixel;
+        if (is8bpp)
+        {
+            // 8bpp: one byte per pixel, so a row is 8 bytes rather than 4.
+            const uint8_t *row8 = &bgtiles[tileLoc];
+            if ((*(const uint32_t *)row8 | *(const uint32_t *)(row8 + 4)) != 0)
+            {
+                if (entry & (1 << 10))
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixel(row8[7 - p], x + p) }
+                }
+                else
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixel(row8[p], x + p) }
+                }
+            }
+        }
+        else
+        {
         uint32_t pixel32 = *(uint32_t*)&bgtiles[tileLoc];
         if (pixel32 != 0) {
             if (entry & (1 << 10))
@@ -790,6 +824,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
                 writeBgPixel(pixel32 >> 28, x+7)
             }
         }
+        }
         x += 8;
     }
     //draw right most tile
@@ -799,6 +834,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -809,12 +845,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixel(pixel, x)
@@ -826,12 +857,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-                
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixel(pixel, x)
                 x += 1;
@@ -854,7 +880,8 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
     unsigned int screenBaseBlock = (control >> 8) & 0x1F;
-    unsigned int bitsPerPixel = 4;//((control >> 7) & 1) ? 8 : 4;
+    unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
+    bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
     unsigned int mapHeight = bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
@@ -889,7 +916,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
-    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * 32) + ((lineTile & 7) * bitsPerPixel)];
+    uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
     if (firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
@@ -924,6 +951,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         entry = bgmap[startTileYLoc + (startTileX & 31)];
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
+    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -937,7 +965,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     
     #define writeBgPixel(pixel, x)  \
         if ( ((pixel)) != 0 ) { \
-            line[x] = pal[(paletteNum << 4) + (pixel)] | 0x8000; \
+            line[x] = pal[palBase + (pixel)] | 0x8000; \
             mask[x] = 1 << bgNum; \
         } \
     
@@ -952,12 +980,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         {
             for (int i = visibleTilePixels; i < 8; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixel(pixel, x)
@@ -968,12 +991,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         {
             for (int i = visibleTilePixels; i < 8; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixel(pixel, x)
                 x += 1;
@@ -990,10 +1008,31 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
             entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
             tileLoc = (tileNum * (bitsPerPixel * 8)) + tileY*bitsPerPixel;
+        if (is8bpp)
+        {
+            // 8bpp: one byte per pixel, so a row is 8 bytes rather than 4.
+            const uint8_t *row8 = &bgtiles[tileLoc];
+            if ((*(const uint32_t *)row8 | *(const uint32_t *)(row8 + 4)) != 0)
+            {
+                if (entry & (1 << 10))
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixel(row8[7 - p], x + p) }
+                }
+                else
+                {
+                    for (int p = 0; p < 8; p++)
+                        { writeBgPixel(row8[p], x + p) }
+                }
+            }
+        }
+        else
+        {
         uint32_t pixel32 = *(uint32_t*)&bgtiles[tileLoc];
         if (pixel32 != 0) {
             if (entry & (1 << 10))
@@ -1019,6 +1058,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
                 writeBgPixel(pixel32 >> 28, x+7)
             }
         }
+        }
         x += 8;
     }
     //draw right most tile
@@ -1028,6 +1068,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         entry = bgmap[startTileYLoc + ((startTileX+(DISPLAY_WIDTH/8)) & 31)];
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
+        palBase = is8bpp ? 0 : (paletteNum << 4);
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -1038,12 +1079,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (3-(i/2))];
-
-                if (i & 1)
-                    pixel &= 0xF;
-                else
-                    pixel >>= 4;
+                pixel = TILE_PIXEL_REV(i);
 
                 //if (pixel != 0)
                 writeBgPixel(pixel, x)
@@ -1055,12 +1091,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         {
             for (int i = 0; i < visibleTilePixels; i++)
             {
-                pixel = bgtiles[tileLoc + (i/2)];
-                
-                if (i & 1)
-                    pixel >>= 4;
-                else
-                    pixel &= 0xF;
+                pixel = TILE_PIXEL_FWD(i);
 
                 writeBgPixel(pixel, x)
                 x += 1;
