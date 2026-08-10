@@ -141,7 +141,31 @@ int strcmp(const char *, const char*);
 extern const u8 gScriptBase[];
 // Offset 0 is the anchor itself, never a real script, so it encodes NULL --
 // matching the `scriptptr` assembler macro, which stores 0 for a null script.
-#define SCRIPT_REBASE(v) ((s32)(v) ? (u8 *)gScriptBase + (s32)(v) : (u8 *)0)
+//
+// This MUST be a function, not a macro. As a macro the null check evaluated its
+// argument twice, and ScriptReadPtr passes ScriptReadWord(ctx), which advances
+// the script pointer: every pointer read consumed 8 bytes and returned the
+// *second* word. `goto_if` then jumped to whatever followed its destination --
+// in InsideOfTruck_EventScript_SetIntroFlags it read 0x01800d21, the bytes of
+// the next `compare`, instead of 0x1cdb4a -- so no script with a pointer
+// operand could work.
+static inline u8 *ScriptRebase(u32 v)
+{
+    // The anchor must be opaque to the optimizer. gScriptBase is defined as
+    // `const u8 gScriptBase[1] = {0}` in src/script.c, so within that
+    // translation unit the compiler can see the whole object: every rebased
+    // address is provably outside a one-byte array, which is undefined
+    // behaviour it may exploit. It folded reads through rebased pointers to the
+    // array's known zero contents, which made the first read in
+    // MapHeaderCheckScriptTable always zero, so the function always returned
+    // NULL and its entire loop body was deleted as dead code -- no map ever ran
+    // its ON_FRAME_TABLE scripts. This barrier launders the pointer so no size
+    // or contents assumption survives.
+    const u8 *base = gScriptBase;
+    __asm__("" : "+r"(base));
+    return (s32)v ? (u8 *)(uintptr_t)base + (s32)v : (u8 *)0;
+}
+#define SCRIPT_REBASE(v) ScriptRebase(v)
 #define T1_READ_PTR(ptr) SCRIPT_REBASE(T1_READ_32(ptr))
 #else
 #define T1_READ_PTR(ptr) (u8 *) T1_READ_32(ptr)
@@ -180,13 +204,26 @@ extern const u8 gScriptBase[];
 // A stored 0 means NULL and must stay NULL -- rebasing it would produce the
 // anchor's high half rather than a null pointer, and callers do test these
 // against NULL (an absent followup task function, for one).
-#define PTR_REBASE32(v) \
-    ((u32)(uintptr_t)(v) \
-        ? (void *)((uintptr_t)gScriptBase + (s32)((u32)(uintptr_t)(v) - (u32)(uintptr_t)gScriptBase)) \
-        : (void *)0)
+// A function, not a macro, for the same reason as ScriptRebase above: the null
+// check would otherwise evaluate its argument three times. No current caller
+// passes an expression with side effects, but SCRIPT_REBASE did not either
+// until ScriptReadPtr was written against it.
+static inline void *PtrRebase32(u32 v)
+{
+    // Same laundering as ScriptRebase above, for the same reason.
+    const u8 *base = gScriptBase;
+    __asm__("" : "+r"(base));
+    if (v == 0)
+        return (void *)0;
+    return (void *)((uintptr_t)base + (s32)(v - (u32)(uintptr_t)base));
+}
+#define PTR_REBASE32(v) PtrRebase32((u32)(uintptr_t)(v))
 #else
 #define PTR_REBASE32(v) ((void *)(uintptr_t)(v))
 #endif
+
+// Diagnostic log that survives a segfault; see src/platform/debug_log.c.
+void EmeraldLog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 #define PACK(data, shift, mask)   ( ((data) << (shift)) & (mask) )
 #define UNPACK(data, shift, mask) ( ((data) & (mask)) >> (shift) )
