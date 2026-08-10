@@ -18,8 +18,8 @@ struct BgControl
         u8 wraparound:1;
 
         u8 charBaseIndex:2;
-        u8 mapBaseIndex:5;
         u8 paletteMode:1;
+        u8 mapBaseIndex;   // 6 bits used: the field BGs sit past screenblock 31
 
         u8 unknown_2; // Assigned to but never read
         u8 unknown_3; // Assigned to but never read
@@ -173,7 +173,10 @@ static u16 GetBgControlAttribute(u8 bg, u8 attributeId)
 
 u8 LoadBgVram(u8 bg, const void *src, u16 size, u16 destOffset, u8 mode)
 {
-    u16 offset;
+    // u32, not u16: the field BGs sit at screenblock 48+, and 48 * 0x800 is
+    // 0x18000 -- which wraps to 0x8000 in 16 bits and lands the tilemap on top
+    // of BG0's character data.
+    u32 offset;
     s8 cursor;
 
     if (IsInvalidBg(bg) || !sGpuBgConfigs.configs[bg].visible)
@@ -212,8 +215,8 @@ static void ShowBgInternal(u8 bg)
                 (sGpuBgConfigs.configs[bg].charBaseIndex << 2) |
                 (sGpuBgConfigs.configs[bg].mosaic << 6) |
                 (sGpuBgConfigs.configs[bg].paletteMode << 7) |
-                (sGpuBgConfigs.configs[bg].mapBaseIndex << 8) |
-                (sGpuBgConfigs.configs[bg].wraparound << 13) |
+                ((sGpuBgConfigs.configs[bg].mapBaseIndex & 0x3F) << 8) |
+                (sGpuBgConfigs.configs[bg].wraparound << 4) |
                 (sGpuBgConfigs.configs[bg].screenSize << 14);
 
         SetGpuReg((bg << 1) + REG_OFFSET_BG0CNT, value);

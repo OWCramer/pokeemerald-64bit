@@ -55,7 +55,7 @@ static const uint16_t bgMapSizes[][2] =
 static void RenderBGScanline(int bgNum, uint16_t control, uint16_t hoffs, uint16_t voffs, int lineNum, uint16_t *line)
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
-    unsigned int screenBaseBlock = (control >> 8) & 0x1F;
+    unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
     unsigned int mapHeight = bgMapSizes[control >> 14][1];

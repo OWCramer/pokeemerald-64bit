@@ -48,14 +48,13 @@ bool32 gRenderExpansionAllowed = FALSE;
 static int sRequestedWidth  = DISPLAY_WIDTH;
 static int sRequestedHeight = DISPLAY_HEIGHT;
 
-// Bounded by what the field's 256x256px map window can actually supply.
-// Vertically the screen sits 24..56px into that window (the offset depends on
-// travel direction -- see field_camera.c), so 24px in each direction is the
-// most that is real map under every condition. Horizontally the window is only
-// 16px wider than the screen and the view sits flush against its left edge, so
-// there is no slack at all until the field BGs are 512 wide.
-#define RENDER_LIMIT_WIDTH  DISPLAY_WIDTH
-#define RENDER_LIMIT_HEIGHT (DISPLAY_HEIGHT + 24 * 2)
+// Bounded by what the field's 512x512px map window can supply. The screen sits
+// 112..144px across and 152..184px down that window (the offset depends on
+// travel direction -- see field_camera.c), and the ring's outermost metatile is
+// deliberately stale, so 112px beyond each edge is the most that is real map
+// under every condition.
+#define RENDER_LIMIT_WIDTH  (DISPLAY_WIDTH  + 112 * 2)
+#define RENDER_LIMIT_HEIGHT (DISPLAY_HEIGHT + 112 * 2)
 
 int gRenderWidth  = DISPLAY_WIDTH;
 int gRenderHeight = DISPLAY_HEIGHT;
@@ -206,7 +205,7 @@ static bool winCheckHorizontalBounds(u16 left, u16 right, u16 xpos)
 static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs, uint16_t voffs, int lineNum, uint16_t *line, struct scanlineData* scanline, bool windowsEnabled)
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
-    unsigned int screenBaseBlock = (control >> 8) & 0x1F;
+    unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
@@ -461,7 +460,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
 static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uint16_t voffs, int lineNum, uint16_t *line, struct scanlineData* scanline, bool windowsEnabled)
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
-    unsigned int screenBaseBlock = (control >> 8) & 0x1F;
+    unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
@@ -701,7 +700,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
 static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, uint16_t voffs, int lineNum, uint16_t *line, struct scanlineData* scanline, bool windowsEnabled)
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
-    unsigned int screenBaseBlock = (control >> 8) & 0x1F;
+    unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];
@@ -946,7 +945,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
 static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs, uint16_t voffs, int lineNum, uint16_t *line, struct scanlineData* scanline, bool windowsEnabled)
 {
     unsigned int charBaseBlock = (control >> 2) & 3;
-    unsigned int screenBaseBlock = (control >> 8) & 0x1F;
+    unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
     unsigned int mapWidth = bgMapSizes[control >> 14][0];

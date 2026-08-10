@@ -15,6 +15,13 @@
 // buffer because it needs to load sufficient border
 // metatiles to fill the player's view (the player has
 // 7 metatiles of view horizontally in either direction).
+// Do NOT retune this to widen the drawn window. Object events, warps and
+// script triggers all have their map-data coordinates shifted into a space
+// offset by MAP_OFFSET, and gSaveBlock1Ptr->pos is stored in that space too --
+// so changing it desynchronises the player from every object on the map and
+// invalidates existing saves. Reading past the backup layout is already
+// handled: MapGridGetMetatileIdAt returns the map's border metatiles, which is
+// what vanilla draws beyond a map edge anyway.
 #define MAP_OFFSET 7
 #define MAP_OFFSET_W (MAP_OFFSET * 2 + 1)
 #define MAP_OFFSET_H (MAP_OFFSET * 2)

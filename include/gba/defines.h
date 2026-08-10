@@ -51,7 +51,10 @@ extern unsigned char PLTT[PLTT_SIZE] __attribute__ ((aligned (4)));
 
 #define BG_PLTT       PLTT
 
-#define VRAM_SIZE 0x18000
+// Extended past the GBA's 96K: the field BGs are 512x512, which needs four
+// 2K screenblocks each. They are placed at 0x18000+, above OBJ VRAM, so the
+// stock BG (0x0000-0xFFFF) and OBJ (0x10000-0x17FFF) layout is untouched.
+#define VRAM_SIZE 0x20000
 #ifndef PORTABLE
 #define VRAM      0x6000000
 #else
