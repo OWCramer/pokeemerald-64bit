@@ -1645,7 +1645,7 @@ static void Task_CommunicateMonInfo(u8 taskId)
 {
     int i;
     s16 *data = gTasks[taskId].data;
-    struct PokemonJump *jump = (struct PokemonJump *)GetWordTaskArg(taskId, DATAIDX_GAME_STRUCT);
+    struct PokemonJump *jump = (struct PokemonJump *)PTR_REBASE32(GetWordTaskArg(taskId, DATAIDX_GAME_STRUCT));
 
     switch (tState)
     {
@@ -3166,7 +3166,7 @@ static void Task_RunPokeJumpGfxFunc(u8 taskId)
     if (!sPokemonJumpGfx->funcFinished)
     {
         // Read the function set in the data by SetUpPokeJumpGfxFunc
-        void (*func)(void) = (void *)(GetWordTaskArg(taskId, 0));
+        void (*func)(void) = (void *)PTR_REBASE32(GetWordTaskArg(taskId, 0));
 
         func();
     }

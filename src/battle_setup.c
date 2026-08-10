@@ -1071,7 +1071,12 @@ static void TrainerBattleLoadArgs(const struct TrainerBattleParameter *specs, co
             data += 2;
             break;
         case TRAINER_PARAM_LOAD_VAL_32BIT:
-            SetU32(specs->varPtr, TrainerBattleLoadArg32(data));
+            // Every varPtr used with the 32-bit params is a `u8 *` script
+            // pointer (intro/defeat speeches, battle script return address), so
+            // the stored value is a gScriptBase offset and must be rebased.
+            // SetU32 was doubly wrong here: it skipped the rebase and wrote only
+            // 4 of the pointer's 8 bytes, leaving the top half stale.
+            SetPtr(specs->varPtr, SCRIPT_REBASE(TrainerBattleLoadArg32(data)));
             data += 4;
             break;
         case TRAINER_PARAM_CLEAR_VAL_8BIT:
@@ -1081,7 +1086,8 @@ static void TrainerBattleLoadArgs(const struct TrainerBattleParameter *specs, co
             SetU16(specs->varPtr, 0);
             break;
         case TRAINER_PARAM_CLEAR_VAL_32BIT:
-            SetU32(specs->varPtr, 0);
+            // Same targets as above: clear the whole pointer, not its low half.
+            SetPtr(specs->varPtr, NULL);
             break;
         case TRAINER_PARAM_LOAD_SCRIPT_RET_ADDR:
             SetPtr(specs->varPtr, data);

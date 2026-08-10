@@ -1291,8 +1291,8 @@ static void Task_UpdateBgDotsPalette(u8 taskId)
 {
     u16 sp8[2];
     s16 *data = gTasks[taskId].data;
-    const u16 *pal1 = (const u16 *)GetWordTaskArg(taskId, 1);
-    const u16 *pal2 = (const u16 *)GetWordTaskArg(taskId, 3);
+    const u16 *pal1 = (const u16 *)PTR_REBASE32(GetWordTaskArg(taskId, 1));
+    const u16 *pal2 = (const u16 *)PTR_REBASE32(GetWordTaskArg(taskId, 3));
 
     PokenavCopyPalette(pal1, pal2, 2, 12, ++data[0], sp8);
     LoadPalette(sp8, BG_PLTT_ID(3) + 1, PLTT_SIZEOF(2));

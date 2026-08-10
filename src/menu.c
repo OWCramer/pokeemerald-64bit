@@ -1813,7 +1813,7 @@ void task_free_buf_after_copying_tile_data_to_vram(u8 taskId)
 {
     if (!CheckForSpaceForDma3Request(gTasks[taskId].data[0]))
     {
-        Free((void *)GetWordTaskArg(taskId, 1));
+        Free(PTR_REBASE32(GetWordTaskArg(taskId, 1)));
         DestroyTask(taskId);
     }
 }

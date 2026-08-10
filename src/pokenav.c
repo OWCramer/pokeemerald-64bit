@@ -242,7 +242,7 @@ bool32 FuncIsActiveLoopedTask(LoopedTask func)
     {
         if (gTasks[i].isActive
             && (gTasks[i].func == Task_RunLoopedTask || gTasks[i].func == Task_RunLoopedTask_LinkMode)
-            && (LoopedTask)GetWordTaskArg(i, 1) == func)
+            && (LoopedTask)PTR_REBASE32(GetWordTaskArg(i, 1)) == func)
             return TRUE;
     }
     return FALSE;
@@ -250,7 +250,7 @@ bool32 FuncIsActiveLoopedTask(LoopedTask func)
 
 static void Task_RunLoopedTask(u8 taskId)
 {
-    LoopedTask loopedTask = (LoopedTask)GetWordTaskArg(taskId, 1);
+    LoopedTask loopedTask = (LoopedTask)PTR_REBASE32(GetWordTaskArg(taskId, 1));
     s16 *state = &gTasks[taskId].data[0];
     bool32 exitLoop = FALSE;
 
@@ -290,7 +290,7 @@ static void Task_RunLoopedTask_LinkMode(u8 taskId)
     if (Overworld_IsRecvQueueAtMax())
         return;
 
-    task = (LoopedTask)GetWordTaskArg(taskId, 1);
+    task = (LoopedTask)PTR_REBASE32(GetWordTaskArg(taskId, 1));
     state = &gTasks[taskId].data[0];
     action = task(*state);
     switch (action)

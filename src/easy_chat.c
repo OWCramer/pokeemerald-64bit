@@ -1386,7 +1386,7 @@ static void Task_EasyChatScreen(u8 taskId)
         break;
     case MAINSTATE_EXIT:
         if (!gPaletteFade.active)
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen((MainCallback)PTR_REBASE32(GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK)));
         break;
     case MAINSTATE_WAIT_FADE_IN:
         if (!gPaletteFade.active)
@@ -1414,21 +1414,21 @@ static bool8 InitEasyChatScreen(u8 taskId)
         if (!InitEasyChatScreenWordData())
         {
             // Alloc failed, exit
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen((MainCallback)PTR_REBASE32(GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK)));
         }
         break;
     case 2:
-        if (!InitEasyChatScreenStruct(tType, (u16 *)GetWordTaskArg(taskId, TASKIDX_WORDS), tPersonType))
+        if (!InitEasyChatScreenStruct(tType, (u16 *)PTR_REBASE32(GetWordTaskArg(taskId, TASKIDX_WORDS)), tPersonType))
         {
             // Alloc failed, exit
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen((MainCallback)PTR_REBASE32(GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK)));
         }
         break;
     case 3:
         if (!InitEasyChatScreenControl())
         {
             // Alloc failed, exit
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen((MainCallback)PTR_REBASE32(GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK)));
         }
         break;
     case 4:
