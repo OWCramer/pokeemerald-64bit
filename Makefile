@@ -77,13 +77,26 @@ ifeq ($(OS),Windows_NT)
   EXE := .exe
 endif
 
+SDL3 ?= 0
+ifneq (,$(filter native3,$(MAKECMDGOALS)))
+  NATIVE64 := 1
+  SDL3 := 1
+endif
+
 ifeq ($(NATIVE64),1)
   # Native 64-bit host build. Pointers are 8 bytes, so every pointer-sized
   # pseudo-op in the hand-written data scripts has to widen to .quad.
   # sdl2-config points at .../include/SDL2, but the sources use <SDL2/SDL.h>,
   # so the parent include dir has to be on the search path too.
+ifeq ($(SDL3),1)
+  # SDL3 uses <SDL3/SDL.h>, and pkg-config already points at the parent dir.
+  TARGET_PLATFORM := PLATFORM_SDL3
+  SDL_CFLAGS := $(shell pkg-config --cflags sdl3)
+  SDL_LDFLAGS := $(shell pkg-config --libs sdl3)
+else
   SDL_CFLAGS := $(shell sdl2-config --cflags) $(foreach d,$(shell sdl2-config --cflags),$(if $(filter -I%,$d),-I$(patsubst -I%,%,$d)/..))
   SDL_LDFLAGS := $(shell sdl2-config --libs)
+endif
   # Widen pointer-sized pseudo-ops, retarget ELF sections at Mach-O, and drop
   # '@' line comments (clang's arm64 assembler does not accept them).
   ASM_PSEUDO_OP_CONV := sed \
@@ -166,8 +179,16 @@ OBJ_DIR_NAME := $(BUILD_DIR)/emerald
 MODERN_ROM_NAME := $(FILE_NAME)_modern.gba
 MODERN_OBJ_DIR_NAME := $(BUILD_DIR)/modern
 ifeq ($(NATIVE64),1)
+# SDL2 and SDL3 builds must not share an object directory: the platform files
+# are gated by TARGET_PLATFORM, so a stale sdl2.o from the other configuration
+# links in and fails on removed SDL2 symbols.
+ifeq ($(SDL3),1)
+PORTABLE_ROM_NAME := $(FILE_NAME)-sdl3
+PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/native-sdl3
+else
 PORTABLE_ROM_NAME := $(FILE_NAME)
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/native
+endif
 else
 PORTABLE_ROM_NAME := $(FILE_NAME).exe
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/pc
@@ -385,6 +406,7 @@ modern: all
 compare: all
 gba: all
 native: all
+native3: all
 
 # Other rules
 rom: $(ROM)

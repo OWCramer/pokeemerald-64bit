@@ -49,6 +49,8 @@ prefabs.json
 /pokeemerald
 /pokeemerald.dSYM/
 build/native/
+build/native-sdl3/
+/pokeemerald-sdl3
 # audio/video capture from the diagnostic hooks
 *.wav
 *.ppm

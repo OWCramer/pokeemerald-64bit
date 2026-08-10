@@ -17,6 +17,7 @@ Android ports use is unavailable).
 | Boot + render | working — full intro sequence animates |
 | RTC | working — reads the host clock |
 | Audio | working — all 12 PCM + 4 CGB channels, band-limited PSG |
+| SDL3 target | working — `make native3`, renders byte-identically to SDL2 |
 
 ## Building
 
@@ -275,6 +276,46 @@ What is worth harvesting from it: the `DSIZEPTR` stride rewrites are a cleaner
 expression of intent than bare literals even when the value is 4, and its pret
 merge is newer than ours.
 
+## The SDL3 target
+
+`make native3` builds `./pokeemerald-sdl3` against SDL3 from
+`src/platform/sdl3.c`. This was written for iOS directly rather than porting the
+SDL2 file twice; `src/platform/sdl2.c` stays as the reference desktop build and
+the two are selected by `TARGET_PLATFORM`, each file wholly inside its own
+`#ifdef` so the unused one compiles to an empty object.
+
+**They must not share an object directory.** The first build linked a stale
+`sdl2.o` from the SDL2 configuration and failed on removed SDL2 symbols
+(`SDL_AtomicGet`, `SDL_SemWait`), so `SDL3=1` selects `build/native-sdl3`.
+
+What SDL3 buys, all of it iOS-relevant:
+
+- **`SDL_AudioStream`** replaces `SDL_QueueAudio`. It re-binds itself when the
+  default device changes, which on iOS happens whenever headphones connect or a
+  call interrupts. Measured queue depth is *steadier* than SDL2's: 17.5-18.3KB
+  across 90s versus 14.2-20.5KB.
+- **`SDL_Gamepad`** gives MFi controllers with no extra code, plus analog stick
+  mapped to the d-pad.
+- **Touch** events arrive in render coordinates via
+  `SDL_ConvertEventToRenderCoordinates`, so the on-screen pad is laid out in the
+  same 240x160 space the game draws into and the hit boxes cannot drift from the
+  drawn buttons. Hit boxes are padded 4px outward; thumbs are imprecise.
+- **`SDL_EVENT_WILL_ENTER_BACKGROUND`** flushes the save synchronously. iOS kills
+  suspended apps with no further chance to run, so the write has to complete in
+  the handler rather than on an exit path that may never execute.
+- **Letterbox** logical presentation rather than stretch — every iPhone is wider
+  than the GBA's 3:2.
+
+Saves move to `SDL_GetPrefPath`, except that on desktop an existing
+`./pokeemerald.sav` is still preferred so current saves are not orphaned.
+
+### Verifying the port
+
+Frame 300 was dumped from both builds with `EMERALD_DUMP_FRAME` and compared:
+**byte-identical**. That is the cheapest possible proof that the rendering path
+survived the rewrite, and it needs no display server — the same technique will
+work on device.
+
 ## Toward iOS
 
 The hard parts are done: no JIT is involved (this is a native recompile, so the
@@ -283,16 +324,16 @@ PPU blitting one texture, and the RTC already reads the host clock.
 
 Remaining work, roughly in order:
 
-1. Rewrite `src/platform/sdl2.c` against **SDL3** — do this once, for iOS,
-   rather than porting the SDL2 file twice. `SDL_Gamepad` gives MFi controller
-   support essentially for free, and `SDL_AudioStream` handles device changes
-   (headphones, calls) that the SDL2 `QueueAudio` path handles poorly.
-2. Touch controls as an on-screen overlay for controller-less play.
-3. Saves must move to `NSDocumentDirectory` with `UIFileSharingEnabled`, and
-   flush on `SDL_APP_WILLENTERBACKGROUND` — iOS kills suspended apps silently.
-4. Xcode target compiling `src/**` plus `src/platform/{sdl2,bios,dma,
+1. ~~Rewrite against SDL3~~ — done, `make native3`.
+2. ~~Touch controls~~ / ~~gamepad~~ / ~~background save flush~~ — done in
+   `sdl3.c`, but the touch overlay has only been exercised on desktop; the
+   layout needs tuning against a real thumb on a real phone.
+3. Xcode target compiling `src/**` plus `src/platform/{sdl3,bios,dma,
    gba_fast_draw,cgb_audio,nostd}.c`; keep using the Makefile for asset
-   generation.
+   generation. Saves want `UIFileSharingEnabled` so they can be pulled off the
+   device, which means preferring `Documents/` over `SDL_GetPrefPath` on iOS.
+4. Cross-compile check: the assembly pipeline emits arm64 Mach-O already, so it
+   should carry over, but `-target arm64-apple-ios` has not been tried yet.
 
 Distribution is sideloading only (free Apple ID for 7 days, paid for a year, or
 AltStore/SideStore). The build output contains Nintendo's assets, so it is for
