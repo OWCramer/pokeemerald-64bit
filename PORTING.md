@@ -391,6 +391,37 @@ is a finding, not a broken probe.
 else that both defines and dereferences an undersized anchor array will hit this
 same trap.
 
+## Audio bugs that were not pointer bugs
+
+Two failures in the portable MP2K player, both distinct from the 32-bit classes
+above and worth recording because the diagnosis path was different:
+
+- **XCMD (0xCD) had no handler.** The event table dispatches `event - 0xB1`, so
+  0xCD landed at index 28 -- which held `MP2K_event_fine`, *ending the track*.
+  Any song reaching an extended command died on the spot. Only the portable
+  table was missing it: `ply_xcmd`, its thirteen sub-commands, and the mixer
+  code consuming the result all already existed. A few table slots are
+  legitimately `MP2K_event_fine` (0xB6-0xB9, 0xC6, 0xC7, 0xC9-0xCB); any of
+  those appearing in real song data would fail the same way.
+
+- **Nothing re-enabled a CGB channel.** Two paths clear a channel's enable bit
+  in NR52 -- a length counter expiring, and a sweep overflow -- but
+  `cgb_trigger_note` did not model the hardware behaviour where writing the
+  trigger bit to NRx4 turns the channel back on. So the first sweep overflow
+  silenced square 1 for the entire session, and every later note on it was
+  programmed correctly into a dead channel.
+
+The second was a regression from this port's own sweep-overflow fix, and the
+lesson generalises: **when emulating a hardware state change, check that the
+inverse transition is modelled too.** Disabling on overflow was correct; it was
+only safe alongside an enable that did not exist.
+
+Both were found by tracing outward from the symptom -- song start/stop, then
+note allocation, then the CGB envelope, then the literal register writes. The
+register dump is what settled it (`NR52=0x8E`, channel 1's enable bit clear
+while every other value was correct), and that trace is worth reaching for early
+next time rather than last.
+
 ## The SDL3 target
 
 `make native3` builds `./pokeemerald-sdl3` against SDL3 from
