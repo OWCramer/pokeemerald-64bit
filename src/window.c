@@ -555,7 +555,7 @@ bool8 SetWindowAttribute(u8 windowId, u8 attributeId, u32 value)
     }
 }
 
-u32 GetWindowAttribute(u8 windowId, u8 attributeId)
+uintptr_t GetWindowAttribute(u8 windowId, u8 attributeId)
 {
     switch (attributeId)
     {
@@ -574,7 +574,11 @@ u32 GetWindowAttribute(u8 windowId, u8 attributeId)
     case WINDOW_BASE_BLOCK:
         return gWindows[windowId].window.baseBlock;
     case WINDOW_TILE_DATA:
-        return (u32)(gWindows[windowId].tileData);
+        // Returned through uintptr_t, not u32: this attribute is a pointer, and
+        // a u32 return truncated it on a 64-bit host. Ten call sites cast the
+        // result straight back to a pointer -- PrintPocketNames among them,
+        // which is why the bag's pocket names were blank.
+        return (uintptr_t)(gWindows[windowId].tileData);
     default:
         return 0;
     }
