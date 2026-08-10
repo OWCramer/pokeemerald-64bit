@@ -147,6 +147,10 @@ void FreeInternal(void *heapStart, void *pointer)
 void *AllocZeroedInternal(void *heapStart, u32 size)
 {
     void *mem = AllocInternal(heapStart, size);
+#ifdef NATIVE_BUILD
+    if (mem == NULL)
+        EmeraldLog("ALLOC FAILED size=%u caller=%p", (unsigned)size, __builtin_return_address(0));
+#endif
 
     if (mem != NULL)
     {

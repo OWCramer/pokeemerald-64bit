@@ -158,6 +158,18 @@ void CpuFastSet(const void *src, void *dst, u32 cnt)
 {
     if(dst == NULL)
     {
+#ifdef NATIVE_BUILD
+        // Log the caller so it can be identified: the return address alone is
+        // ASLR-slid, so record its offset from a known symbol too, which stays
+        // constant and can be looked up with nm.
+        {
+            extern void CpuSet(const void *, void *, u32);
+            void *ret = __builtin_return_address(0);
+            EmeraldLog("CpuFastSet to NULL: src=%p cnt=0x%08x caller=%p delta=0x%lx",
+                       src, cnt, ret,
+                       (unsigned long)((char *)ret - (char *)(void *)CpuSet));
+        }
+#endif
         puts("Attempted to CpuFastSet to NULL\n");
         return;
     }

@@ -54,3 +54,4 @@ build/native-sdl3/
 # audio/video capture from the diagnostic hooks
 *.wav
 *.ppm
+emerald_debug.log

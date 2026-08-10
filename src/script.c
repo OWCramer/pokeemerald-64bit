@@ -120,6 +120,20 @@ bool8 RunScriptCommand(struct ScriptContext *ctx)
             }
 
             cmdCode = *(ctx->scriptPtr);
+#ifdef NATIVE_BUILD
+            {   // TEMP trace: opcode stream, so a script running from the wrong
+                // address or with a wrong stride is visible directly.
+                static int traced, checked, on;
+                extern char *getenv(const char *);
+                if (!checked) { checked = 1; on = getenv("EMERALD_TRACE_SCRIPTS") != NULL; }
+                if (on && traced < 400)
+                {
+                    traced++;
+                    EmeraldLog("  CMD off=0x%lx op=%u",
+                               (long)(ctx->scriptPtr - gScriptBase), cmdCode);
+                }
+            }
+#endif
             ctx->scriptPtr++;
             func = &ctx->cmdTable[cmdCode];
 
