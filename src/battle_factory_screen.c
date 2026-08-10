@@ -2486,9 +2486,9 @@ static void Swap_Task_HandleYesNo(u8 taskId)
                 hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
                 loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
 #ifndef PORTABLE
-                gTasks[taskId].func = (void *)((hiPtr << 16) | loPtr);
+                gTasks[taskId].func = (void *)PTR_REBASE32(((u16)hiPtr << 16) | (u16)loPtr);
 #else
-                gTasks[taskId].func = (void *)(((u16)hiPtr << 16 | (u16)loPtr));
+                gTasks[taskId].func = (void *)PTR_REBASE32((u16)hiPtr << 16 | (u16)loPtr);
 #endif
             }
             else
@@ -2499,9 +2499,9 @@ static void Swap_Task_HandleYesNo(u8 taskId)
                 hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
                 loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
 #ifndef PORTABLE
-                gTasks[taskId].func = (void *)((hiPtr << 16) | loPtr);
+                gTasks[taskId].func = (void *)PTR_REBASE32(((u16)hiPtr << 16) | (u16)loPtr);
 #else
-                gTasks[taskId].func = (void *)(((u16)hiPtr << 16 | (u16)loPtr));
+                gTasks[taskId].func = (void *)PTR_REBASE32((u16)hiPtr << 16 | (u16)loPtr);
 #endif
             }
         }
@@ -2513,9 +2513,9 @@ static void Swap_Task_HandleYesNo(u8 taskId)
             hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
             loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
 #ifndef PORTABLE
-            gTasks[taskId].func = (void *)((hiPtr << 16) | loPtr);
+            gTasks[taskId].func = (void *)PTR_REBASE32(((u16)hiPtr << 16) | (u16)loPtr);
 #else
-            gTasks[taskId].func = (void *)(((u16)hiPtr << 16 | (u16)loPtr));
+            gTasks[taskId].func = (void *)PTR_REBASE32((u16)hiPtr << 16 | (u16)loPtr);
 #endif
         }
         else if (JOY_REPEAT(DPAD_UP))
@@ -3087,9 +3087,9 @@ static void Swap_Task_ScreenInfoTransitionOut(u8 taskId)
             hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
             loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
 #ifndef PORTABLE
-            gTasks[taskId].func = (void*)((hiPtr << 16) | loPtr);
+            gTasks[taskId].func = (void*)PTR_REBASE32(((u16)hiPtr << 16) | (u16)loPtr);
 #else
-            gTasks[taskId].func = (void*)(((u16)hiPtr << 16 | (u16)loPtr));
+            gTasks[taskId].func = (void*)PTR_REBASE32((u16)hiPtr << 16 | (u16)loPtr);
 #endif
         }
         break;
@@ -3198,9 +3198,9 @@ static void Swap_Task_ScreenInfoTransitionIn(u8 taskId)
         hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
         loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
 #ifndef PORTABLE
-        gTasks[taskId].func = (void*)((hiPtr << 16) | loPtr);
+        gTasks[taskId].func = (void*)PTR_REBASE32(((u16)hiPtr << 16) | (u16)loPtr);
 #else
-        gTasks[taskId].func = (void*)(((u16)hiPtr << 16 | (u16)loPtr));
+        gTasks[taskId].func = (void*)PTR_REBASE32((u16)hiPtr << 16 | (u16)loPtr);
 #endif
         break;
     }

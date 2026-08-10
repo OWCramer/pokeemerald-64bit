@@ -276,6 +276,56 @@ What is worth harvesting from it: the `DSIZEPTR` stride rewrites are a cleaner
 expression of intent than bare literals even when the value is 4, and its pret
 merge is newer than ours.
 
+## Pointers split across two 16-bit slots
+
+The intro crashed in `Task_HandleMonAnimation` the moment Birch throws out a
+Pokemon, on a wild address. The cause is a second, entirely separate 32-bit
+assumption from the script bytecode one:
+
+```c
+gTasks[taskId].tPtrHi = (u32)(sprite) >> 16;   // store
+gTasks[taskId].tPtrLo = (u32)(sprite);
+#define ANIM_SPRITE(taskId) ((struct Sprite *)((tPtrHi << 16) | (u16)tPtrLo))
+```
+
+The game stores plain C pointers by splitting them across two **16-bit** task or
+sprite data slots. That is lossless on the GBA. On a 64-bit host `(u32)ptr`
+discards the top half, and the rejoined value is a wild pointer. The two crash
+addresses gave it away immediately -- `0x211ea4e` and `0x590aa4e`, differing in
+their high bits but sharing their low ones.
+
+This is a **class**, not a site: 52 files contain the pattern, with 38 stores and
+75 rejoins (though most of the rejoins are ordinary 32-bit value packing --
+`otId`, palette selectors, text lookups -- and only about 20 are pointers).
+Fixing only the one that crashed would just move the crash.
+
+The top half is recoverable rather than lost, because everything stored this way
+points inside the loaded image: code, statics, or `gHeap`, which is a static
+array carved up by `AllocInternal`, **not** system malloc. So the distance from
+any image symbol to any other fits in a signed 32-bit offset regardless of where
+ASLR maps the image, and `PTR_REBASE32` in `include/global.h` supplies the
+missing half from the same `gScriptBase` anchor the bytecode uses.
+
+Two things worth knowing:
+
+- **Only the loads need fixing.** The stores already write the correct low 32
+  bits, so 38 of the sites need no change at all.
+- **A stored 0 must stay NULL.** Rebasing it would yield the anchor's high half
+  instead of a null pointer, and callers do test these (an absent followup task
+  function, for one).
+
+Linking the image below 4GB would sidestep all of this, and was tried first --
+but arm64 mandates PIE and the linker ignores `-image_base`:
+
+```
+ld: warning: Linking with PIE, -image_base will be ignored
+ld: warning: -no_pie ignored for arm64
+```
+
+Verified by probing the rebased pointer at the crash site: `sprite=0x105d9aa08`,
+inside `gSprites` at offset 96. The truncated value would have been
+`0x05d9aa08` -- the leading `0x1` is exactly what was being lost.
+
 ## The SDL3 target
 
 `make native3` builds `./pokeemerald-sdl3` against SDL3 from

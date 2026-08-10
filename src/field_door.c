@@ -409,8 +409,8 @@ static bool32 AnimateDoorFrame(struct DoorGraphics *gfx, struct DoorAnimFrame *f
 static void Task_AnimateDoor(u8 taskId)
 {
     u16 *data = (u16*) gTasks[taskId].data;
-    struct DoorAnimFrame *frames = (struct DoorAnimFrame *)(tFramesHi << 16 | tFramesLo);
-    struct DoorGraphics *gfx = (struct DoorGraphics *)(tGfxHi << 16 | tGfxLo);
+    struct DoorAnimFrame *frames = (struct DoorAnimFrame *)PTR_REBASE32((u16)tFramesHi << 16 | (u16)tFramesLo);
+    struct DoorGraphics *gfx = (struct DoorGraphics *)PTR_REBASE32((u16)tGfxHi << 16 | (u16)tGfxLo);
 
     if (AnimateDoorFrame(gfx, frames, data) == FALSE)
         DestroyTask(taskId);

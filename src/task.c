@@ -149,7 +149,7 @@ void SwitchTaskToFollowupFunc(u8 taskId)
 {
     u8 followupFuncIndex = NUM_TASK_DATA - 2; // Should be const.
 
-    gTasks[taskId].func = (TaskFunc)((u16)(gTasks[taskId].data[followupFuncIndex]) | (gTasks[taskId].data[followupFuncIndex + 1] << 16));
+    gTasks[taskId].func = (TaskFunc)PTR_REBASE32((u16)(gTasks[taskId].data[followupFuncIndex]) | ((u16)gTasks[taskId].data[followupFuncIndex + 1] << 16));
 }
 
 bool8 FuncIsActiveTask(TaskFunc func)

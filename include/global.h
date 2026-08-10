@@ -158,6 +158,36 @@ extern const u8 gScriptBase[];
 #define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
 #endif
 
+#ifdef NATIVE_BUILD
+// Separately from the script bytecode above, the game also stores plain C
+// pointers by splitting them across two 16-bit task/sprite data slots and
+// rejoining them as (hi << 16) | lo. That is lossless on the GBA, where a
+// pointer is 32 bits, but on a 64-bit host it keeps only the low half and the
+// rejoined value is a wild pointer -- which is what crashed the intro in
+// Task_HandleMonAnimation.
+//
+// The top half is recoverable rather than lost: everything stored this way
+// points inside the loaded image -- code, statics, or gHeap, which is itself a
+// static array carved up by AllocInternal, not system malloc. So the distance
+// from any image symbol to any other fits in a signed 32-bit offset, whatever
+// address ASLR maps the image to, and the anchor supplies the missing half.
+//
+// Linking the image below 4GB would avoid the whole problem, but arm64 mandates
+// PIE and the linker ignores -image_base, so this cannot be fixed at link time.
+//
+// Only the *loads* need this. The stores already write the correct low 32 bits.
+//
+// A stored 0 means NULL and must stay NULL -- rebasing it would produce the
+// anchor's high half rather than a null pointer, and callers do test these
+// against NULL (an absent followup task function, for one).
+#define PTR_REBASE32(v) \
+    ((u32)(uintptr_t)(v) \
+        ? (void *)((uintptr_t)gScriptBase + (s32)((u32)(uintptr_t)(v) - (u32)(uintptr_t)gScriptBase)) \
+        : (void *)0)
+#else
+#define PTR_REBASE32(v) ((void *)(uintptr_t)(v))
+#endif
+
 #define PACK(data, shift, mask)   ( ((data) << (shift)) & (mask) )
 #define UNPACK(data, shift, mask) ( ((data) & (mask)) >> (shift) )
 
