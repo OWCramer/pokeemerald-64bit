@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <setjmp.h>
 
 #include <SDL3/SDL.h>
 
@@ -52,6 +53,12 @@ SDL_Texture *sdlTexture;
 SDL_Semaphore *vBlankSemaphore;
 SDL_AtomicInt isFrameAvailable;
 static SDL_AudioStream *sAudioStream;
+// Soft reset. Ctrl+R only raises this flag; the reset itself must happen on the
+// AgbMain worker thread, because DoSoftReset touches game state and the longjmp
+// below is only valid on the thread that ran setjmp. Doing either from the
+// event loop is a data race at best.
+static jmp_buf sResetJmp;
+static SDL_AtomicInt sResetRequested;
 static SDL_Gamepad *sGamepad;
 
 bool speedUp = false;
@@ -141,6 +148,13 @@ int main(int argc, char **argv)
         return 1;
     }
     SDL_SetTextureScaleMode(sdlTexture, SDL_SCALEMODE_NEAREST);
+    // The framebuffer is opaque by definition, so never blend it. The format is
+    // ABGR1555 and SDL3 defaults alpha-bearing textures to SDL_BLENDMODE_BLEND;
+    // the software renderer ORs 0x8000 into every pixel it draws but fills the
+    // backdrop straight from palette entry 0, whose alpha bit is 0. Blending
+    // therefore made the backdrop transparent and showed the clear colour
+    // through it -- a black main-menu background where SDL2 drew it correctly.
+    SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_NONE);
 
     simTime = curGameTime = lastGameTime = SDL_GetPerformanceCounter();
 
@@ -319,6 +333,17 @@ void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
     // frames, which clicks.
     int bytes = samplesPerFrame;
     int queued = SDL_GetAudioStreamQueued(sAudioStream);
+
+    // Fast-forward generates ~5x the audio the device consumes. The SDL2 build
+    // muted outright; keep playing instead, discarding frames once the queue is
+    // past a bound so it speeds up rather than falling behind.
+    if (speedUp)
+    {
+        if (queued > 2 * AUDIO_FRAME_BYTES)
+            return;
+        SDL_PutAudioStreamData(sAudioStream, audioBuffer, samplesPerFrame);
+        return;
+    }
     const int target = 3 * AUDIO_FRAME_BYTES;   // ~50ms
     const int oneSample = 2 * (int)sizeof(float);
 
@@ -527,11 +552,6 @@ void ProcessEvents(void)
                 {
                     speedUp = false;
                     timeScale = 1.0;
-                    if (sAudioStream)
-                    {
-                        SDL_ClearAudioStream(sAudioStream);
-                        SDL_ResumeAudioStreamDevice(sAudioStream);
-                    }
                 }
                 break;
             }
@@ -552,7 +572,7 @@ void ProcessEvents(void)
             HANDLE_KEYDOWN(DPAD_RIGHT)
             case SDLK_R:
                 if (event.key.mod & SDL_KMOD_CTRL)
-                    DoSoftReset();
+                    SDL_SetAtomicInt(&sResetRequested, 1);
                 break;
             case SDLK_P:
                 if (event.key.mod & SDL_KMOD_CTRL)
@@ -563,8 +583,6 @@ void ProcessEvents(void)
                 {
                     speedUp = true;
                     timeScale = 5.0;
-                    if (sAudioStream)
-                        SDL_PauseAudioStreamDevice(sAudioStream);
                 }
                 break;
             }
@@ -751,6 +769,12 @@ void VDraw(SDL_Texture *texture)
 
 int DoMain(void *data)
 {
+    // A soft reset longjmps back here and re-enters AgbMain, which reinitialises
+    // the GPU registers, keys, interrupt handlers, sound, RTC and flash. This is
+    // not the hardware behaviour of clearing all RAM first -- EWRAM_DATA and
+    // IWRAM_DATA are ordinary statics in this build, with no section to zero --
+    // but returning to the title screen is far closer than exiting the process.
+    setjmp(sResetJmp);
     AgbMain();
     return 0;
 }
@@ -759,6 +783,14 @@ void VBlankIntrWait(void)
 {
     SDL_SetAtomicInt(&isFrameAvailable, 1);
     SDL_WaitSemaphore(vBlankSemaphore);
+
+    // Service a pending soft reset here: this runs on the worker thread, which
+    // is the only place DoSoftReset and the longjmp are safe.
+    if (SDL_GetAtomicInt(&sResetRequested))
+    {
+        SDL_SetAtomicInt(&sResetRequested, 0);
+        DoSoftReset();
+    }
 }
 
 // ---------------------------------------------------------------- RTC
@@ -848,8 +880,9 @@ void Platform_SetAlarm(u8 *alarmData)
 void SoftReset(u32 resetFlags)
 {
     StoreSaveFile();
-    CloseSaveFile();
-    exit(0);
+    if (sAudioStream)
+        SDL_ClearAudioStream(sAudioStream);
+    longjmp(sResetJmp, 1);
 }
 
 #endif // PLATFORM_SDL3
