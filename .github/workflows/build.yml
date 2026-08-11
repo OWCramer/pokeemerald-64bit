@@ -51,6 +51,72 @@ jobs:
         with:
           files: pokeemerald-macos-arm64.zip
 
+  # Unsigned .ipa for sideloading. CI has no Apple certificates and needs none:
+  # whoever installs it signs it themselves with their own Apple ID (AltStore,
+  # Sideloadly, TrollStore). A developer-signed build would be worse than
+  # useless here -- it would only install on devices registered to that
+  # developer's account.
+  ios:
+    name: iOS (.ipa, arm64, unsigned)
+    runs-on: macos-15
+    env:
+      # Matches the SDL the port is developed against. 3.4 for its UIScene
+      # support; the Linux job pins 3.2.x separately for its own reasons.
+      SDL_TAG: release-3.4.14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install libpng pkg-config cmake
+
+      # Homebrew's sdl3 is a macOS slice only, and the app links SDL statically,
+      # so the iOS device slice has to be built here. Cached because it is by
+      # far the slowest step and only changes when SDL_TAG does.
+      - name: Cache SDL3 (iOS device slice)
+        id: sdl
+        uses: actions/cache@v4
+        with:
+          path: SDL/install-iosdev
+          key: sdl3-iosdev-${{ env.SDL_TAG }}-macos-15
+
+      - name: Build SDL3 for iOS
+        if: steps.sdl.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$SDL_TAG" https://github.com/libsdl-org/SDL SDL
+          cmake -S SDL -B SDL/build-iosdev \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_STATIC=ON -DSDL_SHARED=OFF -DSDL_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/SDL/install-iosdev"
+          cmake --build SDL/build-iosdev -j"$(sysctl -n hw.ncpu)"
+          cmake --install SDL/build-iosdev
+
+      # IOS_SDL defaults to a sibling ../SDL checkout; point it inside the
+      # workspace so actions/cache can reach it.
+      - name: Build
+        run: |
+          make ios IOS_SDK_NAME=iphoneos IOS_SDL="$PWD/SDL/install-iosdev" \
+            -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package .ipa
+        run: |
+          ./tools/make_ios_app.sh unsigned
+          ./tools/make_ipa.sh dist/pokeemerald.app dist/pokeemerald-ios.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeemerald-ios
+          path: dist/pokeemerald-ios.ipa
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pokeemerald-ios.ipa
+
   # AppImage + portable tarball, built natively on x86_64 and aarch64.
   #
   # Ubuntu 24.04 rather than 25.04: 25.04's libsdl3-dev hard-links the audio

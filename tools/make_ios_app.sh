@@ -1,8 +1,11 @@
 #!/bin/bash
 # Assemble the iOS build into a .app.
 #
-#   ./tools/make_ios_app.sh            # simulator (unsigned)
+#   ./tools/make_ios_app.sh            # simulator (ad-hoc signed)
 #   ./tools/make_ios_app.sh device     # device, signed for installation
+#   ./tools/make_ios_app.sh unsigned   # device slice, ad-hoc signed -- for CI,
+#                                      # which has no certificates. Sideloading
+#                                      # tools re-sign with the user's Apple ID.
 #
 # SDL3 is linked statically, so unlike the macOS and Linux packaging there is
 # nothing to bundle beyond the icon.
@@ -16,7 +19,11 @@ BUNDLE_ID="com.ocramer.pokeemerald"
 TEAM_ID="63LV533T6V"
 
 [ -f "$BIN" ] || { echo "error: $BIN not built -- run 'make ios' first" >&2; exit 1; }
-if [ "$MODE" = device ]; then PLATFORM=iphoneos; else PLATFORM=iphonesimulator; fi
+case "$MODE" in
+    sim)             PLATFORM=iphonesimulator ;;
+    device|unsigned) PLATFORM=iphoneos ;;
+    *) echo "error: mode must be sim, device or unsigned (got '$MODE')" >&2; exit 1 ;;
+esac
 
 rm -rf "$APP"; mkdir -p "$APP"
 cp "$BIN" "$APP/pokeemerald"
@@ -95,6 +102,12 @@ ENT
     [ -n "$IDENTITY" ] || { echo "error: no Apple Development signing identity" >&2; exit 1; }
     codesign --force --sign "$IDENTITY" --entitlements /tmp/ios-ent.plist --timestamp=none "$APP"
     echo "signed with: $IDENTITY"
+elif [ "$MODE" = unsigned ]; then
+    # Deliberately left unsigned. Whoever sideloads it signs it with their own
+    # Apple ID (AltStore, Sideloadly), and any signature we applied here would
+    # just be stripped -- a developer-signed build would only install on that
+    # developer's registered devices anyway.
+    echo "left unsigned -- sign on sideload"
 else
     codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 fi
