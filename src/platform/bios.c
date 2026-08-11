@@ -109,7 +109,11 @@ void CpuSet(const void *src, void *dst, u32 cnt)
     // both harmful and unnecessary on ELF -- compile it out entirely.
     {
         const uintptr_t kMinValid = 0x100000000UL;
-        if ((uintptr_t)dst < kMinValid || (uintptr_t)src < kMinValid)
+        // A zero-length copy is a no-op whatever the pointers are, and
+        // LoadMapFromWarp legitimately issues them with a NULL source. Logging
+        // those as bad pointers buried the one real hit in the noise.
+        const u32 kCount = cnt & 0x1FFFFF;
+        if (kCount != 0 && ((uintptr_t)dst < kMinValid || (uintptr_t)src < kMinValid))
         {
             // The raw return address is ASLR-slid; log it relative to a
             // known symbol so it can be resolved with nm after the fact.
