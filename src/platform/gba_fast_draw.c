@@ -740,7 +740,11 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
-    if (windowsEnabled)
+    // A row outside the vanilla view has no window over it, so it takes this
+    // non-window path -- but REG_WINOUT is commonly 0 ("show nothing outside the
+    // window"), which would skip the whole scanline and black out the expanded
+    // area. Windows are a 240x160 concept; beyond that, draw everything.
+    if (windowsEnabled && lineNum >= 0 && lineNum < DISPLAY_HEIGHT)
     {
         if (!(REG_WINOUT & (1 << bgNum)))
             return;
@@ -977,7 +981,11 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
-    if (windowsEnabled)
+    // A row outside the vanilla view has no window over it, so it takes this
+    // non-window path -- but REG_WINOUT is commonly 0 ("show nothing outside the
+    // window"), which would skip the whole scanline and black out the expanded
+    // area. Windows are a 240x160 concept; beyond that, draw everything.
+    if (windowsEnabled && lineNum >= 0 && lineNum < DISPLAY_HEIGHT)
     {
         if (!(REG_WINOUT & (1 << bgNum)))
             return;
@@ -1542,7 +1550,11 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     uint16_t* mask = scanline->bgMask;
     
-    if (windowsEnabled)
+    // A row outside the vanilla view has no window over it, so it takes this
+    // non-window path -- but REG_WINOUT is commonly 0 ("show nothing outside the
+    // window"), which would skip the whole scanline and black out the expanded
+    // area. Windows are a 240x160 concept; beyond that, draw everything.
+    if (windowsEnabled && lineNum >= 0 && lineNum < DISPLAY_HEIGHT)
     {
         if (!(REG_WINOUT & (1 << bgNum)))
             return;
@@ -1683,7 +1695,11 @@ static void RenderRotScaleBGScanlineNoEffect(int bgNum, uint16_t control, uint16
     uint8_t *bgmap = (uint8_t *)(VRAM_ + screenBaseBlock * 0x800);
     uint16_t *pal = (uint16_t *)PLTT;
     
-    if (windowsEnabled)
+    // A row outside the vanilla view has no window over it, so it takes this
+    // non-window path -- but REG_WINOUT is commonly 0 ("show nothing outside the
+    // window"), which would skip the whole scanline and black out the expanded
+    // area. Windows are a 240x160 concept; beyond that, draw everything.
+    if (windowsEnabled && lineNum >= 0 && lineNum < DISPLAY_HEIGHT)
     {
         if (!(REG_WINOUT & (1 << bgNum)))
             return;
@@ -2552,7 +2568,9 @@ static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsE
     
     if (windowsEnabled == true && IsInsideWinIn == false)
     {
-        if (!(REG_WINOUT & WINOUT_WIN01_OBJ))
+        // Same as the backgrounds: sprites on rows beyond the vanilla view are
+        // not subject to a window that only spans 240x160.
+        if (!(REG_WINOUT & WINOUT_WIN01_OBJ) && vcount >= 0 && vcount < DISPLAY_HEIGHT)
             return;
     }
 
@@ -2644,6 +2662,15 @@ static void DrawScanline(uint16_t *pixels, int vcount)
     IsInsideWinIn = (WIN0enable || WIN1enable || (REG_DISPCNT & DISPCNT_OBJWIN_ON && REG_DISPCNT & DISPCNT_OBJ_ON));
     
     
+    // Always initialise the mask. The fill below only runs when a window is
+    // actually active on this scanline, and a row outside the vanilla view
+    // never has one -- window bounds live in 0..159 -- so the mask was left
+    // holding stack garbage, which writeBgPixel then consulted to choose a
+    // blend path. That is what blacked out the expanded rows.
+    for (xpos = 0; xpos < (unsigned)gRenderWidth; xpos++)
+        scanline.winMask[xpos] = WINMASK_BG0 | WINMASK_BG1 | WINMASK_BG2
+                               | WINMASK_BG3 | WINMASK_OBJ | WINMASK_CLR;
+
     //draw to pixel mask
     if (IsInsideWinIn)
     {
@@ -2805,6 +2832,7 @@ void DrawFrame(uint16_t *pixels)
 {
     int i;
     int j;
+
     
     //memsetu16(pixels, *(uint16_t *)PLTT, DISPLAY_WIDTH * DISPLAY_HEIGHT);
 

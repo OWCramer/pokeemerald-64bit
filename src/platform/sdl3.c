@@ -83,7 +83,15 @@ static void UpdateViewport(void)
     // the space that would have been letterboxed is filled with more map.
     int scale = maxScale;
 
-    SetRenderSize(winW / scale, winH / scale);
+    // Round UP, and up to a whole tile of overscan. Rounding down left the
+    // render short of the window by up to scale-1 px on each axis -- and up to
+    // a whole tile across, since backgrounds are fetched in 8px units -- which
+    // showed as black edges. Covering the window and cropping is better than
+    // falling short and letterboxing.
+    int wantW = (((winW + scale - 1) / scale) + 7) & ~7;
+    int wantH = (winH + scale - 1) / scale;
+
+    SetRenderSize(wantW, wantH);
 
     if (gRenderWidth != sTextureW || gRenderHeight != sTextureH)
     {
@@ -102,10 +110,16 @@ static void UpdateViewport(void)
         }
     }
 
-    // Present 1:1 at an integer scale rather than letterboxing a fixed 240x160.
+    // Present 1:1 at an integer scale. When the render covers the window, crop
+    // the overscan; when the field's tilemap could not back the full request,
+    // fall back to letterboxing rather than scaling up off-integer and
+    // blurring every pixel.
+    bool covers = (gRenderWidth * scale >= winW && gRenderHeight * scale >= winH);
+
     SDL_SetRenderLogicalPresentation(sdlRenderer, gRenderWidth * scale,
                                      gRenderHeight * scale,
-                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                                     covers ? SDL_LOGICAL_PRESENTATION_OVERSCAN
+                                            : SDL_LOGICAL_PRESENTATION_LETTERBOX);
 }
 
 
