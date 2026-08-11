@@ -237,6 +237,23 @@ static inline void *PtrRebase32(u32 v)
 #define T2_READ_PTR(ptr) ((void *)(uintptr_t)T2_READ_32(ptr))
 #endif
 
+#ifdef NATIVE_BUILD
+// Bytecode pointers are self-relative (offset from their own slot). That cannot
+// survive being copied into ctx->data[] and reloaded after the slot is gone
+// (ScrCmd_loadword stores, ScrCmd_message reloads). Those few sites instead
+// stash the resolved pointer as a gScriptBase-relative value and reverse it
+// here. Uniform on every 64-bit host -- gScriptBase is a plain runtime base with
+// no emit machinery, unlike the deleted SCRIPT_REBASE offset scheme. 0 = NULL.
+static inline u8 *ScriptDataToPtr(u32 v)
+{
+    const u8 *base = gScriptBase;
+    __asm__("" : "+r"(base));
+    return v ? (u8 *)(uintptr_t)base + (s32)v : (u8 *)0;
+}
+#else
+#define ScriptDataToPtr(v) ((u8 *)(uintptr_t)(v))
+#endif
+
 // Diagnostic log that survives a segfault; see src/platform/debug_log.c.
 void EmeraldLog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

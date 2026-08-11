@@ -31,9 +31,20 @@ void ScriptCall(struct ScriptContext *ctx, const u8 *ptr);
 void ScriptReturn(struct ScriptContext *ctx);
 u16 ScriptReadHalfword(struct ScriptContext *ctx);
 u32 ScriptReadWord(struct ScriptContext *ctx);
-// Bytecode stores pointers as offsets from gScriptBase on 64-bit hosts;
-// this rebases them. Identity on the GBA build.
-#define ScriptReadPtr(ctx) SCRIPT_REBASE(ScriptReadWord(ctx))
+// Bytecode stores each pointer as a signed 32-bit offset from its own slot
+// (asm/macros/event.inc etc. emit `.long (target - .)`), so the real pointer is
+// slot + offset. Capture the slot before ScriptReadWord advances past it.
+// 0 is the NULL sentinel. Absolute (identity) on the GBA build.
+static inline const u8 *ScriptReadPtr(struct ScriptContext *ctx)
+{
+#ifdef NATIVE_BUILD
+    const u8 *slot = ctx->scriptPtr;
+    u32 off = ScriptReadWord(ctx);
+    return off ? slot + (s32)off : (const u8 *)0;
+#else
+    return (const u8 *)(uintptr_t)ScriptReadWord(ctx);
+#endif
+}
 void LockPlayerFieldControls(void);
 void UnlockPlayerFieldControls(void);
 bool8 ArePlayerFieldControlsLocked(void);

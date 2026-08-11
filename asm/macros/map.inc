@@ -20,11 +20,7 @@
 	.ifc \script, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	sptr \script
-	.else
-	.long (\script - _gScriptBase)
-	.endif
+	.long (\script - .)
 	.endif
 	.else
 	.int \script
@@ -41,11 +37,7 @@
 	.ifc \script, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	sptr \script
-	.else
-	.long (\script - _gScriptBase)
-	.endif
+	.long (\script - .)
 	.endif
 	.else
 	.int \script
