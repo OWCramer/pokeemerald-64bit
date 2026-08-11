@@ -1642,6 +1642,56 @@ u8 CreateVirtualObject(u8 graphicsId, u8 virtualObjId, s16 x, s16 y, u8 elevatio
     return spriteId;
 }
 
+// Object events only ever spawn from the map the player is standing on, so a
+// connected map's NPCs did not exist until the transition fired -- with a wide
+// viewport you watch them appear. Spawn them early, translating their template
+// coordinates into this map's space. They are tagged with their own map, so
+// when the transition happens GetAvailableObjectEventId matches them and does
+// not spawn duplicates, and UpdateObjectEventCoordsForCameraUpdate shifts them
+// into place with everything else.
+static void TrySpawnConnectedMapObjectEvents(s16 cameraX, s16 cameraY, s16 left, s16 right, s16 top, s16 bottom)
+{
+    const struct MapConnections *connections = gMapHeader.connections;
+    s32 i, j;
+
+    if (connections == NULL || connections->connections == NULL)
+        return;
+
+    for (i = 0; i < connections->count; i++)
+    {
+        const struct MapConnection *connection = &connections->connections[i];
+        const struct MapHeader *header = GetMapHeaderFromConnection(connection);
+        s16 dx, dy;
+
+        if (header == NULL || header->events == NULL)
+            continue;
+
+        switch (connection->direction)
+        {
+        case CONNECTION_SOUTH: dx = connection->offset; dy = gMapHeader.mapLayout->height; break;
+        case CONNECTION_NORTH: dx = connection->offset; dy = -header->mapLayout->height;   break;
+        case CONNECTION_WEST:  dx = -header->mapLayout->width; dy = connection->offset;    break;
+        case CONNECTION_EAST:  dx = gMapHeader.mapLayout->width; dy = connection->offset;  break;
+        default: continue;
+        }
+
+        for (j = 0; j < header->events->objectEventCount; j++)
+        {
+            struct ObjectEventTemplate template = header->events->objectEvents[j];
+            s16 npcX, npcY;
+
+            template.x += dx;
+            template.y += dy;
+            npcX = template.x + MAP_OFFSET;
+            npcY = template.y + MAP_OFFSET;
+
+            if (top <= npcY && bottom >= npcY && left <= npcX && right >= npcX
+                && !FlagGet(template.flagId))
+                TrySpawnObjectEventTemplate(&template, connection->mapNum, connection->mapGroup, cameraX, cameraY);
+        }
+    }
+}
+
 void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
 {
     u8 i;
@@ -1671,6 +1721,9 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
                 && !FlagGet(template->flagId))
                 TrySpawnObjectEventTemplate(template, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup, cameraX, cameraY);
         }
+
+        if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE && !InTrainerHill())
+            TrySpawnConnectedMapObjectEvents(cameraX, cameraY, left, right, top, bottom);
     }
 }
 

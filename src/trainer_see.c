@@ -201,6 +201,11 @@ bool8 CheckForTrainersWantingBattle(void)
 
         if (!gObjectEvents[i].active)
             continue;
+        // Trainers from a connected map are spawned early so they do not pop in;
+        // they must not be able to notice the player from the next map over.
+        if (gObjectEvents[i].mapNum != gSaveBlock1Ptr->location.mapNum
+         || gObjectEvents[i].mapGroup != gSaveBlock1Ptr->location.mapGroup)
+            continue;
         if (gObjectEvents[i].trainerType != TRAINER_TYPE_NORMAL && gObjectEvents[i].trainerType != TRAINER_TYPE_BURIED)
             continue;
 
