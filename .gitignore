@@ -72,3 +72,18 @@ emerald_debug.log
 /android/app/src/main/jniLibs/
 /android/local.properties
 # build-android/ (vendored SDL source + per-abi builds) is covered by /build-*/
+
+# Xcode wrapper (tools/../project.yml -> `xcodegen generate`). The project is
+# entirely generated, and it is also where Xcode writes per-user state:
+# window layout, scheme prefs and breakpoints, under a directory named after
+# the local account. project.yml and xcode/stub.c are the sources; everything
+# below is reproducible from them.
+/Pokeemerald.xcodeproj/
+/xcode/Info.plist
+# Belt and braces: per-user Xcode state, wherever it turns up.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+# The make-built iOS binary the Xcode target installs into its bundle.
+/pokeemerald-ios
+

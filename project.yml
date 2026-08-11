@@ -1,0 +1,137 @@
+# Xcode wrapper around the Makefile build, so Xcode can sign, archive and
+# upload to TestFlight. Regenerate the project with:
+#
+#     xcodegen generate
+#
+# The game itself is NOT built by Xcode -- `make ios` produces the binary and a
+# post-build script drops it into the bundle Xcode assembled. Xcode is here for
+# exactly one reason: automatic signing creates the explicit App ID and the App
+# Store distribution profile, which the 63LV533T6V.* development wildcard cannot
+# provide (wildcard App IDs are not valid for App Store distribution).
+name: Pokeemerald
+options:
+  bundleIdPrefix: com.ocramer
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+targets:
+  Pokeemerald:
+    type: application
+    platform: iOS
+    sources:
+      # A do-nothing main so Xcode has something to link; the post-build script
+      # replaces the resulting executable with the real one. Xcode needs to
+      # produce *an* executable for the bundle to be signable.
+      - path: xcode/stub.c
+      # Icon Composer bundle. Xcode 26+ compiles .icon into the Assets.car that
+      # CFBundleIconName refers to.
+      - path: appicons/appicon.icon
+        type: file
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ocramer.pokeemerald
+        PRODUCT_NAME: Pokeemerald
+        DEVELOPMENT_TEAM: 63LV533T6V
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: appicon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: NO
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "3"
+        # The executable is swapped in already-built; let nothing touch it.
+        STRIP_INSTALLED_PRODUCT: NO
+        COPY_PHASE_STRIP: NO
+        # The script reads the binary from $SRCROOT, outside Xcode's sandbox.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    info:
+      path: xcode/Info.plist
+      properties:
+        CFBundleDisplayName: Pokemon Emerald
+        # App Store category. Xcode's General tab writes this as an
+        # INFOPLIST_KEY_* build setting, which is inert here because the
+        # target uses a real INFOPLIST_FILE rather than a generated plist --
+        # so it only takes effect declared as a plist key.
+        LSApplicationCategoryType: public.app-category.role-playing-games
+        # XcodeGen writes this plist itself, so the build settings do not reach
+        # it unless referenced -- without these, CFBundleVersion stayed at 1 and
+        # bumping CURRENT_PROJECT_VERSION silently did nothing. App Store
+        # Connect rejects a duplicate build number, so bump it per upload.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleIconName: appicon
+        LSRequiresIPhoneOS: true
+        # Without a launch screen iOS runs the app letterboxed in a
+        # compatibility mode at a fraction of the real screen size.
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # iPad also allows portrait; the renderer's viewport is dynamic, so a
+        # tall narrow field is handled the same way a wide one is.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+        # Statically linked SDL3 references AVCaptureDevice (its camera
+        # backend) and CBCentralManager (its HIDAPI Bluetooth backend). Apple's
+        # upload scanner flags the API *references*, not calls, so these strings
+        # are required even though the game never uses either -- ITMS-90683
+        # rejected the first upload for the camera one.
+        NSCameraUsageDescription: >-
+          Emerald never uses the camera. This declaration is required only
+          because the SDL media library it is built on includes camera support.
+        NSBluetoothAlwaysUsageDescription: >-
+          Emerald uses Bluetooth to connect game controllers.
+        # Declares no non-exempt encryption, which otherwise blocks every
+        # TestFlight build behind a manual compliance prompt.
+        ITSAppUsesNonExemptEncryption: false
+    postBuildScripts:
+      - name: Install make-built executable
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          BIN="$SRCROOT/pokeemerald-ios"
+          if [ ! -f "$BIN" ]; then
+            echo "error: $BIN not found." >&2
+            echo "note: build it first with: make ios IOS_SDK_NAME=iphoneos" >&2
+            exit 1
+          fi
+          # Copy to a temp file beside the destination and rename into place.
+          # A plain `cp` writes in place, so an interrupted copy leaves a
+          # truncated executable that codesign then chokes on with
+          # "truncated or malformed object" -- which is exactly what happened.
+          # An atomic rename means the destination is either the whole binary
+          # or untouched, and the size check turns a partial write into a
+          # loud build failure instead of a corrupt archive.
+          DEST="$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
+          TMP="$DEST.tmp.$$"
+          rm -f "$TMP"
+          trap 'rm -f "$TMP"' EXIT
+          cp "$BIN" "$TMP"
+          SRC_SIZE=$(stat -f%z "$BIN")
+          TMP_SIZE=$(stat -f%z "$TMP")
+          if [ "$SRC_SIZE" != "$TMP_SIZE" ]; then
+            echo "error: copy truncated -- $TMP_SIZE of $SRC_SIZE bytes" >&2
+            exit 1
+          fi
+          chmod +x "$TMP"
+          mv -f "$TMP" "$DEST"
+          echo "installed $SRC_SIZE-byte executable from make build"
+
+          # Fallback: if this Xcode did not compile the .icon itself, compile it
+          # here so the bundle never ships an Info.plist advertising an icon it
+          # does not contain (which is exactly what CI shipped once already).
+          RES="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          if [ ! -f "$RES/Assets.car" ] && [ -d "$SRCROOT/appicons/appicon.icon" ]; then
+            echo "note: Assets.car absent, compiling appicon.icon directly"
+            xcrun actool "$SRCROOT/appicons/appicon.icon" --compile "$RES" \
+              --platform "${PLATFORM_NAME:-iphoneos}" \
+              --minimum-deployment-target 15.0 \
+              --output-partial-info-plist /tmp/xcode-icon-partial.plist >/dev/null
+          fi
