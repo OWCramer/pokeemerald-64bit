@@ -73,6 +73,20 @@ commit is a safe revert point. The old anchor macros stay until the last user is
 * Whole-game runtime pass (overworld scripts, battles, AI, sound, field moves) after Phase 4/5,
   plus loading a real-hardware save to confirm saves are byte-identical.
 
+## Status
+
+Phases 0–5 are complete: every bytecode dialect (field effects, overworld
+scripts, MP2K sound, battle/AI/contest/anim) reads pointers self-relative, all
+`.inc` macros and the sed emit one uniform `.long (target - .)`, and the anchor
+read path, the Android `sptr`/`.emerald_sptr`/`elf_script_rebase.py` patcher, and
+`-z notext` are deleted. Verified on Linux: clean build, links, boots, title
+renders. macOS/iOS/Android are untested during this work and need a build + run.
+
+Phase 6 (`PtrRebase32`) is deferred: it is a separate runtime split-pointer
+problem (not bytecode), invasive and collision-prone, and would not remove
+`gScriptBase` anyway (`ScriptDataToPtr` keeps it as a runtime base). Not worth
+its risk until the phases above are validated on all platforms.
+
 ## End state
 
 One emit rule, one read rule, no anchor, no patcher, no `-no-pie`/`-z notext`. A new 64-bit
