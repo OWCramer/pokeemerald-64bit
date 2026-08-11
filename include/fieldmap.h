@@ -23,9 +23,9 @@
 
 #define MAX_MAP_DATA_SIZE 131072
 
-// Distinct secondary tilesets that can be on screen at once: the current map
-// plus its four possible connections, rounded up.
-#define MAX_TILESET_BANKS 8
+// MAX_TILESET_BANKS -- how many distinct tileset pairs can be on screen at
+// once -- lives in include/gba/defines.h, next to the VRAM and palette sizes
+// it decides.
 
 #define NUM_TILES_PER_METATILE 8
 
@@ -50,8 +50,10 @@ extern struct BackupMapLayout gBackupMapLayout;
 
 s32 MapGridGetMetatileIdAt(s32 x, s32 y);
 u8 MapGridGetTilesetBankAt(s32 x, s32 y);
-const struct Tileset *GetTilesetBank(u8 bank);
+const struct Tileset *GetTilesetBankPrimary(u8 bank);
+const struct Tileset *GetTilesetBankSecondary(u8 bank);
 u8 GetTilesetBankCount(void);
+void LoadTilesetBanks(void);
 s32 MapGridGetMetatileBehaviorAt(s32 x, s32 y);
 void MapGridSetMetatileIdAt(s32 x, s32 y, u16 metatile);
 void MapGridSetMetatileEntryAt(s32 x, s32 y, u16 metatile);

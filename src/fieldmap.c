@@ -5,6 +5,7 @@
 #include "fldeff.h"
 #include "fldeff_misc.h"
 #include "frontier_util.h"
+#include "malloc.h"
 #include "menu.h"
 #include "mirage_tower.h"
 #include "overworld.h"
@@ -40,7 +41,15 @@ EWRAM_DATA static u16 ALIGNED(4) sBackupMapData[MAX_MAP_DATA_SIZE] = {0};
 // Route 103 (Mauville vs Petalburg) while collision stayed right.
 EWRAM_DATA static u8 sBackupMapBank[MAX_MAP_DATA_SIZE] = {0};
 
-static const struct Tileset *sTilesetBanks[MAX_TILESET_BANKS];
+// A bank is keyed on the whole tileset pair, not just the secondary: a
+// connection whose primary differs would decode its terrain wrongly too.
+struct TilesetBank
+{
+    const struct Tileset *primary;
+    const struct Tileset *secondary;
+};
+
+static struct TilesetBank sTilesetBanks[MAX_TILESET_BANKS];
 static u8 sTilesetBankCount;
 EWRAM_DATA struct MapHeader gMapHeader = {0};
 EWRAM_DATA struct Camera gCamera = {0};
@@ -108,34 +117,42 @@ void InitTrainerHillMap(void)
     GenerateTrainerHillFloorLayout(sBackupMapData);
 }
 
-// Returns the bank for a secondary tileset, registering it if new. Bank 0 is
-// reserved for the current map, so an unregisterable tileset (more distinct
-// secondaries than banks) falls back to it -- the old, wrong-but-harmless
-// behaviour rather than an out-of-range bank.
-static u8 RegisterTilesetBank(const struct Tileset *secondary)
+// Returns the bank for a tileset pair, registering it if new. Bank 0 is
+// reserved for the current map, so a pair that will not fit (more distinct
+// tilesets on screen than banks) falls back to it -- the old,
+// wrong-but-harmless behaviour rather than an out-of-range bank.
+static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tileset *secondary)
 {
     u8 i;
 
     for (i = 0; i < sTilesetBankCount; i++)
     {
-        if (sTilesetBanks[i] == secondary)
+        if (sTilesetBanks[i].primary == primary && sTilesetBanks[i].secondary == secondary)
             return i;
     }
 
     if (sTilesetBankCount < MAX_TILESET_BANKS)
     {
-        sTilesetBanks[sTilesetBankCount] = secondary;
+        sTilesetBanks[sTilesetBankCount].primary = primary;
+        sTilesetBanks[sTilesetBankCount].secondary = secondary;
         return sTilesetBankCount++;
     }
 
     return 0;
 }
 
-const struct Tileset *GetTilesetBank(u8 bank)
+const struct Tileset *GetTilesetBankPrimary(u8 bank)
 {
     if (bank >= sTilesetBankCount)
         return NULL;
-    return sTilesetBanks[bank];
+    return sTilesetBanks[bank].primary;
+}
+
+const struct Tileset *GetTilesetBankSecondary(u8 bank)
+{
+    if (bank >= sTilesetBankCount)
+        return NULL;
+    return sTilesetBanks[bank].secondary;
 }
 
 u8 GetTilesetBankCount(void)
@@ -159,7 +176,7 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
     // cells they fill.
     memset(sBackupMapBank, 0, sizeof(sBackupMapBank));
     sTilesetBankCount = 0;
-    RegisterTilesetBank(mapLayout->secondaryTileset);
+    RegisterTilesetBank(mapLayout->primaryTileset, mapLayout->secondaryTileset);
 
     gBackupMapLayout.map = sBackupMapData;
     gBackupMapLayout.width = mapLayout->width + MAP_OFFSET_W + MAP_BORDER_EXTRA * 2;
@@ -239,7 +256,8 @@ static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHea
 
     // Tag these cells so they are later decoded against the connected map's
     // tileset rather than ours.
-    bank = RegisterTilesetBank(connectedMapHeader->mapLayout->secondaryTileset);
+    bank = RegisterTilesetBank(connectedMapHeader->mapLayout->primaryTileset,
+                               connectedMapHeader->mapLayout->secondaryTileset);
     bankDest = &sBackupMapBank[gBackupMapLayout.width * y + x];
 
     for (i = 0; i < height; i++)
@@ -969,6 +987,64 @@ static void LoadPrimaryTilesetPalette(struct MapLayout const *mapLayout)
 void LoadSecondaryTilesetPalette(struct MapLayout const *mapLayout)
 {
     LoadTilesetPalette(mapLayout->secondaryTileset, BG_PLTT_ID(NUM_PALS_IN_PRIMARY), (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
+}
+
+// An extra bank's tiles land above TILESET_BANK_VRAM_START, and LoadBgTiles
+// cannot reach there: it computes its destination as a u16 byte offset, which
+// 0x20000 overflows to zero. Nothing about a bank needs the BG plumbing anyway
+// -- no tile allocator, no DMA queue -- so write VRAM directly and
+// synchronously, which also means the caller does not have to wait on a temp
+// buffer the way CopySecondaryTilesetToVram does.
+static void CopyTilesetToVramBank(struct Tileset const *tileset, u16 numTiles, u32 tileOffset)
+{
+    u8 *dest = (u8 *)VRAM + tileOffset * TILE_SIZE_4BPP;
+    u32 size = numTiles * TILE_SIZE_4BPP;
+
+    if (tileset == NULL || tileset->tiles == NULL)
+        return;
+
+    if (!tileset->isCompressed)
+    {
+        CpuFastCopy(tileset->tiles, dest, size);
+    }
+    else
+    {
+        u32 decompressedSize;
+        void *buffer = malloc_and_decompress(tileset->tiles, &decompressedSize);
+
+        if (buffer != NULL)
+        {
+            if (decompressedSize < size)
+                size = decompressedSize;
+            CpuFastCopy(buffer, dest, size);
+            Free(buffer);
+        }
+    }
+}
+
+// Loads every bank a connection registered. Bank 0 is the current map, already
+// loaded by the normal path, so it is skipped. Both halves of the pair are
+// loaded even when the primary matches the current map's -- copying the
+// already-decompressed tiles out of VRAM instead would depend on the primary
+// having finished its asynchronous load, which is not true at every call site.
+void LoadTilesetBanks(void)
+{
+    u8 bank;
+
+    for (bank = 1; bank < sTilesetBankCount; bank++)
+    {
+        u32 tileBase = TILESET_BANK_TILE_BASE(bank);
+        u16 palBase = PLTT_ID(TILESET_BANK_PAL_BASE(bank));
+
+        CopyTilesetToVramBank(sTilesetBanks[bank].primary, NUM_TILES_IN_PRIMARY, tileBase);
+        CopyTilesetToVramBank(sTilesetBanks[bank].secondary, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY,
+                              tileBase + NUM_TILES_IN_PRIMARY);
+
+        LoadTilesetPalette(sTilesetBanks[bank].primary, palBase,
+                           NUM_PALS_IN_PRIMARY * PLTT_SIZE_4BPP);
+        LoadTilesetPalette(sTilesetBanks[bank].secondary, palBase + PLTT_ID(NUM_PALS_IN_PRIMARY),
+                           (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
+    }
 }
 
 void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)

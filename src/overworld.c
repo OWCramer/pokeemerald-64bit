@@ -542,6 +542,7 @@ static void InitMapView(void)
     ResetFieldCamera();
     CopyMapTilesetsToVram(gMapHeader.mapLayout);
     LoadMapTilesetPalettes(gMapHeader.mapLayout);
+    LoadTilesetBanks();
     DrawWholeMapView();
     InitTilesetAnimations();
 }
@@ -828,6 +829,9 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
     InitMap();
     CopySecondaryTilesetToVramUsingHeap(gMapHeader.mapLayout);
     LoadSecondaryTilesetPalette(gMapHeader.mapLayout);
+    // InitMap above rebuilt the layout, so the connected maps -- and the banks
+    // their cells are tagged with -- have just changed.
+    LoadTilesetBanks();
 
     for (paletteIndex = NUM_PALS_IN_PRIMARY; paletteIndex < NUM_PALS_TOTAL; paletteIndex++)
         ApplyWeatherColorMapToPal(paletteIndex);
@@ -1882,6 +1886,7 @@ static bool32 LoadMapInStepsLink(u8 *state)
         if (FreeTempTileDataBuffersIfPossible() != TRUE)
         {
             LoadMapTilesetPalettes(gMapHeader.mapLayout);
+            LoadTilesetBanks();
             (*state)++;
         }
         break;
@@ -1957,6 +1962,7 @@ static bool32 LoadMapInStepsLocal(u8 *state, bool32 a2)
         if (FreeTempTileDataBuffersIfPossible() != TRUE)
         {
             LoadMapTilesetPalettes(gMapHeader.mapLayout);
+            LoadTilesetBanks();
             (*state)++;
         }
         break;
@@ -2054,6 +2060,7 @@ static bool32 ReturnToFieldLink(u8 *state)
         if (FreeTempTileDataBuffersIfPossible() != TRUE)
         {
             LoadMapTilesetPalettes(gMapHeader.mapLayout);
+            LoadTilesetBanks();
             (*state)++;
         }
         break;

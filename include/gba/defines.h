@@ -25,10 +25,31 @@
 
 #define ALIGNED(n) __attribute__((aligned(n)))
 
+// Extra tileset banks. The expanded viewport shows whole neighbouring maps, but
+// a map's metatile ids only mean anything against its own tileset pair, so
+// every distinct pair on screen gets a bank: a full 1024-tile, 16-palette copy
+// of the tileset space the GBA can address at once. Bank 0 is the map the
+// player is standing on and keeps the vanilla tile 0 / palette 0 bases, so
+// nothing but a connected map's cells pays for any of this. See
+// docs/WIDE_VIEW_TILESET_BANKS.md.
+//
+// Banks are stacked above the stock VRAM and palette layout rather than carved
+// out of it, so every address the rest of the game already uses is untouched.
+#define MAX_TILESET_BANKS        8
+#define TILESET_BANK_NUM_TILES   1024
+#define TILESET_BANK_NUM_PALS    16
+#define TILESET_BANK_VRAM_SIZE   (TILESET_BANK_NUM_TILES * 32) // 4bpp
+#define TILESET_BANK_PLTT_SIZE   (TILESET_BANK_NUM_PALS * 32)  // 16 colours, 2 bytes each
+#define TILESET_BANK_VRAM_START  0x20000
+#define TILESET_BANK_PLTT_START  32 // in palettes, i.e. just past the OBJ palettes
+
+#define TILESET_BANK_TILE_BASE(n) ((n) == 0 ? 0 : (TILESET_BANK_VRAM_START / 32) + ((n) - 1) * TILESET_BANK_NUM_TILES)
+#define TILESET_BANK_PAL_BASE(n)  ((n) == 0 ? 0 : TILESET_BANK_PLTT_START + ((n) - 1) * TILESET_BANK_NUM_PALS)
+
 #define BG_PLTT_SIZE  0x200
 #define OBJ_PLTT      (PLTT + BG_PLTT_SIZE)
 #define OBJ_PLTT_SIZE 0x200
-#define PLTT_SIZE     (BG_PLTT_SIZE + OBJ_PLTT_SIZE)
+#define PLTT_SIZE     (BG_PLTT_SIZE + OBJ_PLTT_SIZE + (MAX_TILESET_BANKS - 1) * TILESET_BANK_PLTT_SIZE)
 
 #ifndef PORTABLE
 #define SOUND_INFO_PTR (*(struct SoundInfo **)0x3007FF0)
@@ -54,7 +75,8 @@ extern unsigned char PLTT[PLTT_SIZE] __attribute__ ((aligned (4)));
 // Extended past the GBA's 96K: the field BGs are 512x512, which needs four
 // 2K screenblocks each. They are placed at 0x18000+, above OBJ VRAM, so the
 // stock BG (0x0000-0xFFFF) and OBJ (0x10000-0x17FFF) layout is untouched.
-#define VRAM_SIZE 0x20000
+// Above all of that, at TILESET_BANK_VRAM_START, sit the extra tileset banks.
+#define VRAM_SIZE (TILESET_BANK_VRAM_START + (MAX_TILESET_BANKS - 1) * TILESET_BANK_VRAM_SIZE)
 #ifndef PORTABLE
 #define VRAM      0x6000000
 #else
