@@ -469,6 +469,8 @@ void ApplyNewEncryptionKeyToGameStats(u32 newKey)
 
 void LoadObjEventTemplatesFromHeader(void)
 {
+    s32 i;
+
     // Clear map object templates
     CpuFill32(0, gSaveBlock1Ptr->objectEventTemplates, sizeof(gSaveBlock1Ptr->objectEventTemplates));
 
@@ -476,6 +478,13 @@ void LoadObjEventTemplatesFromHeader(void)
     CpuCopy32(gMapHeader.events->objectEvents,
               gSaveBlock1Ptr->objectEventTemplates,
               gMapHeader.events->objectEventCount * sizeof(struct ObjectEventTemplate));
+
+    // The bytes just copied hold ROM-form (self-relative) offsets, which are
+    // meaningless at their new address and would not survive the save block
+    // being relocated anyway. Convert each to the save form.
+    for (i = 0; i < gMapHeader.events->objectEventCount; i++)
+        SetSaveTemplateScript(&gSaveBlock1Ptr->objectEventTemplates[i],
+                              GetRomTemplateScript(&gMapHeader.events->objectEvents[i]));
 }
 
 void LoadSaveblockObjEventScripts(void)
@@ -490,7 +499,8 @@ void LoadSaveblockObjEventScripts(void)
 #endif
     {
         for (i = 0; i < OBJECT_EVENT_TEMPLATES_COUNT; i++)
-            savObjTemplates[i].script = mapHeaderObjTemplates[i].script;
+            SetSaveTemplateScript(&savObjTemplates[i],
+                                  GetRomTemplateScript(&mapHeaderObjTemplates[i]));
     }
 }
 

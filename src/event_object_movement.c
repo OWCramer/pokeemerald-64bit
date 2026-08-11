@@ -145,6 +145,7 @@ static void UpdateObjectEventVisibility(struct ObjectEvent *, struct Sprite *);
 static void MakeSpriteTemplateFromObjectEventTemplate(const struct ObjectEventTemplate *, struct SpriteTemplate *, const struct SubspriteTable **);
 static void GetObjectEventMovingCameraOffset(s16 *, s16 *);
 static const struct ObjectEventTemplate *GetObjectEventTemplateByLocalIdAndMap(u8, u8, u8);
+static const struct ObjectEventTemplate *GetObjectEventTemplateByLocalIdAndMapEx(u8, u8, u8, bool8 *);
 static void LoadObjectEventPalette(u16);
 static void RemoveObjectEventIfOutsideView(struct ObjectEvent *);
 static void SpawnObjectEventOnReturnToField(u8, s16, s16);
@@ -2425,7 +2426,14 @@ void SetObjectEventDirection(struct ObjectEvent *objectEvent, u8 direction)
 
 static const u8 *GetObjectEventScriptPointerByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
 {
-    return GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup)->script;
+    bool8 fromSave;
+    const struct ObjectEventTemplate *t =
+        GetObjectEventTemplateByLocalIdAndMapEx(localId, mapNum, mapGroup, &fromSave);
+
+    if (t == NULL)
+        return NULL;
+
+    return fromSave ? GetSaveTemplateScript(t) : GetRomTemplateScript(t);
 }
 
 const u8 *GetObjectEventScriptPointerByObjectEventId(u8 objectEventId)
@@ -2480,7 +2488,12 @@ u8 GetObjectEventBerryTreeId(u8 objectEventId)
     return gObjectEvents[objectEventId].trainerRange_berryTreeId;
 }
 
-static const struct ObjectEventTemplate *GetObjectEventTemplateByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
+// Returns the template and, through fromSave, which array it came from. The two
+// arrays encode their script field differently (see global.fieldmap.h), so a
+// caller that wants the script must know which -- handing back a bare pointer
+// let the wrong decoder be applied, which is how every NPC script resolved to
+// garbage.
+static const struct ObjectEventTemplate *GetObjectEventTemplateByLocalIdAndMapEx(u8 localId, u8 mapNum, u8 mapGroup, bool8 *fromSave)
 {
     const struct ObjectEventTemplate *templates;
     const struct MapHeader *mapHeader;
@@ -2490,14 +2503,24 @@ static const struct ObjectEventTemplate *GetObjectEventTemplateByLocalIdAndMap(u
     {
         templates = gSaveBlock1Ptr->objectEventTemplates;
         count = gMapHeader.events->objectEventCount;
+        *fromSave = TRUE;
     }
     else
     {
         mapHeader = Overworld_GetMapHeaderByGroupAndId(mapGroup, mapNum);
         templates = mapHeader->events->objectEvents;
         count = mapHeader->events->objectEventCount;
+        *fromSave = FALSE;
     }
     return FindObjectEventTemplateByLocalId(localId, templates, count);
+}
+
+// For callers that only want the non-script fields (coords, movement type).
+static const struct ObjectEventTemplate *GetObjectEventTemplateByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
+{
+    bool8 fromSave;
+
+    return GetObjectEventTemplateByLocalIdAndMapEx(localId, mapNum, mapGroup, &fromSave);
 }
 
 static const struct ObjectEventTemplate *FindObjectEventTemplateByLocalId(u8 localId, const struct ObjectEventTemplate *templates, u8 count)
@@ -2546,7 +2569,7 @@ static void OverrideObjectEventTemplateScript(const struct ObjectEvent *objectEv
 
     objectEventTemplate = GetBaseTemplateForObjectEvent(objectEvent);
     if (objectEventTemplate)
-        objectEventTemplate->script = script;
+        SetSaveTemplateScript(objectEventTemplate, script);
 }
 
 void TryOverrideTemplateCoordsForObjectEvent(const struct ObjectEvent *objectEvent, u8 movementType)

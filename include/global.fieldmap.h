@@ -104,10 +104,80 @@ struct ObjectEventTemplate
              //u16 padding2:8;
     /*0x0C*/ u16 trainerType;
     /*0x0E*/ u16 trainerRange_berryTreeId;
+#ifdef NATIVE_BUILD
+    // A real pointer here is 8 bytes on a 64-bit host, which pushed the
+    // template from 24 to 32 bytes, SaveBlock1 from 4 sectors to 5, and the
+    // whole save from 32 sectors to 34 -- a layout no real .sav matches.
+    // Stored instead as a 4-byte encoded reference; see GetRomTemplateScript
+    // and GetSaveTemplateScript below.
+    /*0x10*/ u32 script;
+#else
     /*0x10*/ const u8 *script;
+#endif
     /*0x14*/ u16 flagId;
     /*0x16*/ //u8 padding3[2];
 };
+
+// script is a 4-byte encoded reference rather than a pointer, holding the
+// template to 24 bytes so SaveBlock1 fits 4 sectors and the save matches real
+// hardware. 0 encodes NULL on every target.
+//
+// The encoding must be COPY-SAFE. GetObjectEventTemplateByLocalIdAndMap returns
+// the ROM map-header array or the SaveBlock1 copy depending on which map you
+// are standing on, so one caller reads both, and LoadSaveblockObjEventScripts
+// copies one into the other. A self-relative offset (target - &slot) satisfies
+// neither: it is only valid at the address it was written for, and on Mach-O it
+// is not even valid there, because ld64's subsections_via_symbols relocates
+// each symbol's data after the assembler has already folded the difference to a
+// constant -- which crashed on the first NPC talked to.
+#ifdef NATIVE_BUILD
+// script is 4 bytes rather than a pointer, so the template stays 24 bytes and
+// the save keeps the cartridge layout. Two encodings, chosen by where the
+// template LIVES -- not by target OS. Both are identical on every platform.
+//
+// ROM map-header templates never move, so a self-relative offset works and is
+// the single uniform emit rule from docs/POINTER_MIGRATION.md: `target - .`,
+// which folds at assembly time and needs no relocation on Mach-O or ELF.
+static inline const u8 *GetRomTemplateScript(const struct ObjectEventTemplate *t)
+{
+    return t->script ? (const u8 *)&t->script + (s32)t->script : NULL;
+}
+
+// The SaveBlock1 copy is a different problem: MoveSaveBlocks_ResetHeap moves the
+// whole block to a trainer-id-derived address, memcpy's it in both directions,
+// and it round-trips through the save file. Anything measured from its own slot
+// is stale the moment the block moves -- every script came out exactly the
+// relocation delta off, and talking to an NPC ran that as bytecode.
+//
+// So the save copy is anchored on gScriptBase instead. Nothing is emitted for
+// it: the value is computed at runtime when the template is copied in, which is
+// why this needs no SUBTRACTOR and no ELF special case. 0 stays NULL.
+static inline const u8 *GetSaveTemplateScript(const struct ObjectEventTemplate *t)
+{
+    return (const u8 *)ScriptDataToPtr(t->script);
+}
+
+static inline void SetSaveTemplateScript(struct ObjectEventTemplate *t, const u8 *p)
+{
+    t->script = p ? (u32)(s32)(p - gScriptBase) : 0;
+}
+#else
+static inline const u8 *GetRomTemplateScript(const struct ObjectEventTemplate *t)
+{
+    return t->script;
+}
+
+static inline const u8 *GetSaveTemplateScript(const struct ObjectEventTemplate *t)
+{
+    return t->script;
+}
+
+static inline void SetSaveTemplateScript(struct ObjectEventTemplate *t, const u8 *p)
+{
+    t->script = p;
+}
+#endif
+
 
 struct WarpEvent
 {
