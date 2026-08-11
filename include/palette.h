@@ -8,6 +8,10 @@
 
 #define PLTT_BUFFER_SIZE (PLTT_SIZE / sizeof(u16))
 
+// Every palette a screen-wide effect has to touch: the 32 the GBA has, plus
+// each extra tileset bank's copy of the 16 BG palettes.
+#define NUM_PALETTES_TOTAL (PLTT_BUFFER_SIZE / 16)
+
 #define PALETTE_FADE_STATUS_DELAY 2
 #define PALETTE_FADE_STATUS_ACTIVE 1
 #define PALETTE_FADE_STATUS_DONE 0

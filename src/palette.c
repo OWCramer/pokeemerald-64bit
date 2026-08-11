@@ -403,6 +403,30 @@ static u8 PaletteStruct_GetPalNum(u16 id)
     return NUM_PALETTE_STRUCTS;
 }
 
+// Extra tileset banks keep a whole copy of the map's 16 BG palettes above the
+// 32 hardware ones (see include/gba/defines.h), where no 32-bit selection mask
+// can reach them. Every operation on a BG palette therefore has to be repeated
+// at each bank's copy, or a connected map keeps its colours while the screen
+// fades to black -- which would look worse than the wrong tiles this all
+// replaced. Fills a caller-provided array and returns how many offsets it used.
+//
+// Unregistered banks are included: nothing renders them, so the cost is a few
+// hundred colours during a fade, and skipping them would mean palette.c
+// tracking which maps the field currently has on screen.
+static u32 GetPaletteBankOffsets(u16 palOffset, u16 *offsets)
+{
+    u32 n = 0;
+    u32 bank;
+
+    offsets[n++] = palOffset;
+    if (palOffset < OBJ_PLTT_OFFSET)
+    {
+        for (bank = 1; bank < MAX_TILESET_BANKS; bank++)
+            offsets[n++] = PLTT_ID(TILESET_BANK_PAL_BASE(bank)) + palOffset;
+    }
+    return n;
+}
+
 static u8 UpdateNormalPaletteFade(void)
 {
     u16 paletteOffset;
@@ -442,11 +466,18 @@ static u8 UpdateNormalPaletteFade(void)
         while (selectedPalettes)
         {
             if (selectedPalettes & 1)
-                BlendPalette(
-                    paletteOffset,
-                    16,
-                    gPaletteFade.y,
-                    gPaletteFade.blendColor);
+            {
+                u16 offsets[MAX_TILESET_BANKS];
+                u32 count = GetPaletteBankOffsets(paletteOffset, offsets);
+                u32 j;
+
+                for (j = 0; j < count; j++)
+                    BlendPalette(
+                        offsets[j],
+                        16,
+                        gPaletteFade.y,
+                        gPaletteFade.blendColor);
+            }
             selectedPalettes >>= 1;
             paletteOffset += 16;
         }
@@ -497,9 +528,14 @@ void InvertPlttBuffer(u32 selectedPalettes)
     {
         if (selectedPalettes & 1)
         {
+            u16 offsets[MAX_TILESET_BANKS];
+            u32 count = GetPaletteBankOffsets(paletteOffset, offsets);
+            u32 j;
             u8 i;
-            for (i = 0; i < 16; i++)
-                gPlttBufferFaded[paletteOffset + i] = ~gPlttBufferFaded[paletteOffset + i];
+
+            for (j = 0; j < count; j++)
+                for (i = 0; i < 16; i++)
+                    gPlttBufferFaded[offsets[j] + i] = ~gPlttBufferFaded[offsets[j] + i];
         }
         selectedPalettes >>= 1;
         paletteOffset += 16;
@@ -514,10 +550,15 @@ void TintPlttBuffer(u32 selectedPalettes, s8 r, s8 g, s8 b)
     {
         if (selectedPalettes & 1)
         {
+            u16 offsets[MAX_TILESET_BANKS];
+            u32 count = GetPaletteBankOffsets(paletteOffset, offsets);
+            u32 j;
             u8 i;
+
+            for (j = 0; j < count; j++)
             for (i = 0; i < 16; i++)
             {
-                struct PlttData *data = (struct PlttData *)&gPlttBufferFaded[paletteOffset + i];
+                struct PlttData *data = (struct PlttData *)&gPlttBufferFaded[offsets[j] + i];
                 data->r += r;
                 data->g += g;
                 data->b += b;
@@ -536,9 +577,14 @@ void UnfadePlttBuffer(u32 selectedPalettes)
     {
         if (selectedPalettes & 1)
         {
+            u16 offsets[MAX_TILESET_BANKS];
+            u32 count = GetPaletteBankOffsets(paletteOffset, offsets);
+            u32 j;
             u8 i;
-            for (i = 0; i < 16; i++)
-                gPlttBufferFaded[paletteOffset + i] = gPlttBufferUnfaded[paletteOffset + i];
+
+            for (j = 0; j < count; j++)
+                for (i = 0; i < 16; i++)
+                    gPlttBufferFaded[offsets[j] + i] = gPlttBufferUnfaded[offsets[j] + i];
         }
         selectedPalettes >>= 1;
         paletteOffset += 16;
@@ -588,6 +634,11 @@ static u8 UpdateFastPaletteFade(void)
 
     if (gPaletteFade.objPaletteToggle)
     {
+        // This half also covers the extra tileset banks, which sit above the OBJ
+        // palettes. The two halves run the same arithmetic and differ only in
+        // which frame they run on, so a bank palette fades identically whether
+        // it is counted as a BG one or an OBJ one -- the split is only there to
+        // spread the work across frames.
         paletteOffsetStart = OBJ_PLTT_OFFSET;
         paletteOffsetEnd = PLTT_BUFFER_SIZE;
     }
@@ -834,7 +885,14 @@ void BlendPalettes(u32 selectedPalettes, u8 coeff, u16 color)
     for (paletteOffset = 0; selectedPalettes; paletteOffset += 16)
     {
         if (selectedPalettes & 1)
-            BlendPalette(paletteOffset, 16, coeff, color);
+        {
+            u16 offsets[MAX_TILESET_BANKS];
+            u32 count = GetPaletteBankOffsets(paletteOffset, offsets);
+            u32 j;
+
+            for (j = 0; j < count; j++)
+                BlendPalette(offsets[j], 16, coeff, color);
+        }
         selectedPalettes >>= 1;
     }
 }

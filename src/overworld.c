@@ -805,6 +805,7 @@ bool8 SetDiveWarpDive(u16 x, u16 y)
 void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
 {
     s32 paletteIndex;
+    u8 bank;
 
     SetWarpDestination(mapGroup, mapNum, WARP_ID_NONE, -1, -1);
 
@@ -835,6 +836,15 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
 
     for (paletteIndex = NUM_PALS_IN_PRIMARY; paletteIndex < NUM_PALS_TOTAL; paletteIndex++)
         ApplyWeatherColorMapToPal(paletteIndex);
+
+    // The banks were reloaded above with unmapped colours, and this path never
+    // runs the weather fade-in that would otherwise cover them. Without this a
+    // connected map is lit as if the weather were clear until the player warps.
+    for (bank = 1; bank < GetTilesetBankCount(); bank++)
+    {
+        for (paletteIndex = 0; paletteIndex < TILESET_BANK_NUM_PALS; paletteIndex++)
+            ApplyWeatherColorMapToPal(TILESET_BANK_PAL_BASE(bank) + paletteIndex);
+    }
 
     InitSecondaryTilesetAnimation();
     UpdateLocationHistoryForRoamer();
