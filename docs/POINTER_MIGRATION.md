@@ -41,8 +41,20 @@ uniform, hack-free end state for a fraction of the churn.
 
 ## What stays per-OS (legitimately, not hacks)
 
-Object-format cosmetics only: Mach-O symbol underscores / section names, and exe vs `.so`
-vs `.dylib` link mode. No pointer scheme is per-OS anymore.
+Object-format cosmetics: Mach-O symbol underscores / section names, and exe vs `.so`
+vs `.dylib` link mode.
+
+One pointer scheme is per-OS, and unavoidably so: the **MP2K sound goto/loop targets on
+Mach-O** stay `gScriptBase`-relative (`target - _gScriptBase`, read `gScriptBase + offset`)
+rather than self-relative. On ELF a self-relative `target - .` between two same-file labels
+folds to a stable link-time constant; on Mach-O it also folds — but `ld64`'s
+`.subsections_via_symbols` re-lays-out the byte-packed song atoms afterward, so that folded
+constant goes stale and the loop jump lands in unmapped memory (`EXC_BAD_ACCESS` in
+`MP2KPlayerMain`). Referencing the *external* `gScriptBase` instead forces a SUBTRACTOR
+relocation that `ld64` resolves against the final layout. The battle/script/field dialects
+are unaffected because their goto targets are global symbols, which `ld64` does not shift.
+The split lives on `PORTABLE_ELF` in `MP2K_event_goto` / `SetPokemonCryTone` and the Darwin
+`ASM_PSEUDO_OP_CONV`; everything else is uniform self-relative.
 
 ## Saves are untouched
 
@@ -76,11 +88,14 @@ commit is a safe revert point. The old anchor macros stay until the last user is
 ## Status
 
 Phases 0–5 are complete: every bytecode dialect (field effects, overworld
-scripts, MP2K sound, battle/AI/contest/anim) reads pointers self-relative, all
-`.inc` macros and the sed emit one uniform `.long (target - .)`, and the anchor
+scripts, MP2K sound, battle/AI/contest/anim) reads pointers self-relative, the
+`.inc` macros and the sed emit a uniform `.long (target - .)`, and the anchor
 read path, the Android `sptr`/`.emerald_sptr`/`elf_script_rebase.py` patcher, and
-`-z notext` are deleted. Verified on Linux: clean build, links, boots, title
-renders. macOS/iOS/Android are untested during this work and need a build + run.
+`-z notext` are deleted. The sole documented exception is the MP2K sound goto on
+Mach-O, which stays `gScriptBase`-relative (see "What stays per-OS"). Verified on
+Linux (clean build, links, boots, full play) and macOS (overworld, battles, and
+sound including town/route loop points and Pokémon cries — the ld64 layout crash
+is fixed). iOS/Android still need a build + run.
 
 Phase 6 (`PtrRebase32`) is deferred: it is a separate runtime split-pointer
 problem (not bytecode), invasive and collision-prone, and would not remove
