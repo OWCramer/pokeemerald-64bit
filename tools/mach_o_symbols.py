@@ -94,6 +94,12 @@ def split_statements(lines):
 
 
 def main():
+    # --elf: ELF has no leading-underscore convention and no restriction on
+    # 'L'-prefixed symbols, so the aliasing and prefixing are all no-ops there.
+    # The 8-byte alignment work below is not Mach-O specific -- it is what makes
+    # widened pointers land where C expects -- so it still runs.
+    elf = '--elf' in sys.argv
+
     lines = sys.stdin.buffer.read().decode('utf-8', errors='replace').splitlines(True)
     # NOTE: split_statements() is correct but currently disabled. Enabling it
     # makes the cpp-expanded `enum A; enum B; ...` constant tables actually
@@ -119,13 +125,13 @@ def main():
 
     def ptr_sub(m):
         name = m.group(1)
-        if name in defined or is_constant_name(name) or name.startswith('_'):
+        if elf or name in defined or is_constant_name(name) or name.startswith('_'):
             return name
         return '_' + name
 
     def l_only_sub(m):
         name = m.group(1)
-        if name.startswith('_') or not is_local_prefixed(name):
+        if elf or name.startswith('_') or not is_local_prefixed(name):
             return name
         return '_' + name
 
@@ -151,7 +157,7 @@ def main():
         return False
 
     def emit_alias(name):
-        if name in aliased:
+        if elf or name in aliased:
             return
         aliased.add(name)
         out.append('\t.globl _%s\n' % name)

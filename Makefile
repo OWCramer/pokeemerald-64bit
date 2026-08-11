@@ -99,8 +99,11 @@ else
   SDL_CFLAGS := $(shell sdl2-config --cflags) $(foreach d,$(shell sdl2-config --cflags),$(if $(filter -I%,$d),-I$(patsubst -I%,%,$d)/..))
   SDL_LDFLAGS := $(shell sdl2-config --libs)
 endif
-  # Widen pointer-sized pseudo-ops, retarget ELF sections at Mach-O, and drop
-  # '@' line comments (clang's arm64 assembler does not accept them).
+  # Widening pointer-sized pseudo-ops and realigning to 8 bytes are 64-bit
+  # concerns and apply to any object format. Retargeting sections at Mach-O,
+  # and the leading underscore on gScriptBase, are not -- so the pipeline
+  # forks here.
+  ifeq ($(shell uname -s),Darwin)
   ASM_PSEUDO_OP_CONV := sed \
 	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - _gScriptBase)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -111,12 +114,19 @@ endif
 	-e 's/[[:space:]][[:space:]]*@[^"]*$$//;s/^@.*//' \
 	-e '/^[[:space:]]*\.size[[:space:]]/d' \
 	-e 's/^\([[:space:]]*\)\.align[[:space:]]\{1,\}2[[:space:]]*$$/\1.balign 8/'
-  # Emits _name aliases for defined labels and prefixes external references.
-  # Inline .include'd data before filtering; the assembler would otherwise
-  # resolve them itself and the generated map/layout/header files would
-  # never see the pointer-widening or alignment rewrites.
-  EXPAND_INC := | python3 tools/expand_includes.py -I . -I sound
   MACHO_SYMS := | python3 tools/mach_o_symbols.py
+  else
+  # ELF keeps its own section names, and C symbols carry no underscore.
+  ASM_PSEUDO_OP_CONV := sed \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - gScriptBase)/' \
+	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
+	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
+	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
+	-e 's/[[:space:]][[:space:]]*@[^"]*$$//;s/^@.*//' \
+	-e '/^[[:space:]]*\.size[[:space:]]/d' \
+	-e 's/^\([[:space:]]*\)\.align[[:space:]]\{1,\}2[[:space:]]*$$/\1.balign 8/'
+  MACHO_SYMS := | python3 tools/mach_o_symbols.py --elf
+  endif
   # Emulates GNU as --defsym, which clang's integrated assembler lacks.
   # STR_VAR_1..3 are charmap entries, not constants. Passed as macro arguments
   # they arrive as literal text, so `.if STR_VAR_1 == STR_VAR_1` compares an
@@ -618,9 +628,16 @@ $(SYM): $(ELF)
 	$(OBJDUMP) -t $< | sort -u | grep -E "^0[2389]" | $(PERL) -p -e 's/^(\w{8}) (\w).{6} \S+\t(\w{8}) (\S+)$$/\1 \2 \3 \4/g' > $@
 else
 ifeq ($(NATIVE64),1)
+ifeq ($(shell uname -s),Darwin)
 $(ROM): $(OBJS)
 	@bash tools/gen_macho_aliases.sh $(OBJ_DIR)/macho_aliases.txt $^
 	$(MODERNCC) $(CFLAGS) $^ $(SDL_LDFLAGS) -Wl,-alias_list,$(OBJ_DIR)/macho_aliases.txt -o $@
+else
+# No alias list: on ELF the bare names the assembly uses are the names C
+# produces, so there is nothing to map.
+$(ROM): $(OBJS)
+	$(MODERNCC) $(CFLAGS) $^ $(SDL_LDFLAGS) -lm -o $@
+endif
 else
 $(ROM): $(OBJS)
 	$(MODERNCC) $(CFLAGS) -Wl,--demangle $^ -static-libgcc -L$(SDL_DIR)/lib $(PLATFORM_INCLUDES) -lwinmm -lxinput -o $@
