@@ -223,13 +223,13 @@ void MP2K_event_fine(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 // Sets the track's cmdPtr to the specified address.
 void MP2K_event_goto(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 #ifdef NATIVE_BUILD
-    // Song bytecode stores jump targets as signed 32-bit offsets from
-    // gScriptBase. A raw 8-byte pointer cannot be used here: Mach-O requires
-    // relocated pointers to be 8-byte aligned, and these sit at arbitrary
-    // offsets inside a packed instruction stream.
+    // Song bytecode stores each jump target as a signed 32-bit offset from its
+    // own slot (cmdPtr points at it), so the target is slot + offset. A raw
+    // 8-byte pointer cannot be used here: Mach-O requires relocated pointers to
+    // be 8-byte aligned, and these sit at arbitrary offsets in a packed stream.
     s32 rel;
     memcpy(&rel, track->cmdPtr, sizeof rel);
-    track->cmdPtr = SCRIPT_REBASE(rel);
+    track->cmdPtr = track->cmdPtr + rel;
 #elif defined(NOT_GBA)
     u8 *addr;
     memcpy(&addr, track->cmdPtr, sizeof(u8 *));

@@ -180,7 +180,7 @@ endif
   endif
   ifeq ($(shell uname -s),Darwin)
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - _gScriptBase)/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -200,7 +200,7 @@ endif
   # rewrites every recorded slot from PC-relative to gScriptBase-relative after
   # the link, so the read-time macros in global.h reconstruct the PIE address.
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\tsptr \1/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -212,7 +212,7 @@ endif
   else
   # ELF keeps its own section names, and C symbols carry no underscore.
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long \1/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
