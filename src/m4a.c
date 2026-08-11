@@ -1854,12 +1854,19 @@ start_song:
     gPokemonCrySongs[i].tone = tone;
     gPokemonCrySongs[i].part[0] = &gPokemonCrySongs[i].part0;
     gPokemonCrySongs[i].part[1] = &gPokemonCrySongs[i].part1;
-    // This cry song is built at runtime, so its goto target is stored the same
-    // way MP2K_event_goto reads it: self-relative -- a signed 32-bit offset from
-    // the gotoTarget slot itself to `cont` (the reader does cmdPtr + offset with
-    // cmdPtr pointing at this field). Uniform on every 64-bit host.
+    // This cry song is built at runtime, so its goto target must be stored the
+    // exact way MP2K_event_goto reads it back -- and that differs by object
+    // format (see the split there). ELF: self-relative, a signed offset from the
+    // gotoTarget slot to `cont`. Mach-O: gScriptBase-relative, matching the
+    // relocation-forced sound-goto scheme. A mismatch feeds the reader a wild
+    // pointer that crashes the enemy cry on battle entry.
+#ifdef PORTABLE_ELF
     gPokemonCrySongs[i].gotoTarget = (u32)(s32)((const u8 *)&gPokemonCrySongs[i].cont
                                               - (const u8 *)&gPokemonCrySongs[i].gotoTarget);
+#else
+    gPokemonCrySongs[i].gotoTarget =
+        (u32)(s32)((const u8 *)&gPokemonCrySongs[i].cont - gScriptBase);
+#endif
 
     mplayInfo->ident = ID_NUMBER;
 

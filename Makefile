@@ -178,8 +178,16 @@ endif
     CPPFLAGS += -D PORTABLE_ELF
   endif
   ifeq ($(shell uname -s),Darwin)
+  # Mach-O only: sound goto/loop targets stay gScriptBase-relative, NOT self-
+  # relative. gScriptBase is external to the song .s, so `target - _gScriptBase`
+  # forces a SUBTRACTOR relocation ld64 resolves after final layout. A same-file
+  # self-relative `target - .` folds to an assembly-time constant that ld64's
+  # subsections_via_symbols layout then shifts out from under -- which sent
+  # cmdPtr into unmapped memory once a byte-packed track hit its loop point
+  # (EXC_BAD_ACCESS in MP2KPlayerMain). ELF folds the difference safely, so
+  # Linux/Android keep the uniform self-relative form below. See MP2K_event_goto.
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - _gScriptBase)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
