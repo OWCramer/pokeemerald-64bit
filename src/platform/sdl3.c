@@ -25,6 +25,7 @@
 #include <SDL3/SDL.h>
 
 #include "global.h"
+#include "field_camera.h"
 #include "platform.h"
 #include "rtc.h"
 #include "gba/defines.h"
@@ -1279,6 +1280,9 @@ void Platform_SetAlarm(u8 *alarmData)
 void SoftReset(u32 resetFlags)
 {
     StoreSaveFile();
+    // The field's tilemaps are heap-allocated and survive the longjmp, so drop
+    // them here or the restarted game leaks them and starts with stale pointers.
+    FreeFieldTilemaps();
     if (sAudioStream)
         SDL_ClearAudioStream(sAudioStream);
     longjmp(sResetJmp, 1);

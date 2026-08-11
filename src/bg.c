@@ -51,6 +51,15 @@ static u32 GetBgType(u8 bg);
 
 void ResetBgs(void)
 {
+    u32 i;
+
+    // Forget any port-extended tilemap. Screens that set BGCNT directly rather
+    // than going through InitBgsFromTemplates -- the intro, for one -- would
+    // otherwise keep reading the overworld's heap buffer and render it as
+    // garbage, which is what a soft reset did to the title screen.
+    for (i = 0; i < 4; i++)
+        gBgExt[i].map = NULL;
+
     ResetBgControlStructs();
     sGpuBgConfigs.bgVisibilityAndMode = 0;
     SetTextModeAndHideBgs();
