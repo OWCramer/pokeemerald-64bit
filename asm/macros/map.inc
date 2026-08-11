@@ -57,12 +57,37 @@
 	.space 1  /* Padding*/
 	.short \trainer_type
 	.short \sight_radius_tree_etc
-	/* ObjectEventTemplate is a real C struct: 24 bytes on GBA, 32 on a 64-bit
-	   host with script at offset 16 and flagId at 24. */
+	/* ObjectEventTemplate is a real C struct, 24 bytes on every target. The
+	   script is a 4-byte self-relative offset on a 64-bit host rather than a
+	   .quad, so the template keeps the GBA layout and a hardware .sav loads.
+	   0 encodes NULL.
+
+	   Self-relative is the one emit rule for every target (see
+	   docs/POINTER_MIGRATION.md): it folds at assembly time and needs no
+	   relocation, on Mach-O or ELF. It is valid here because ROM map data
+	   never moves. The SaveBlock1 copy of this array does move, so it is
+	   converted to a gScriptBase-anchored form when copied in -- read it with
+	   GetSaveTemplateScript, not GetRomTemplateScript. */
 	.ifdef PORTABLE_ASM
-	.quad \script
+	.ifc \script, 0x0
+	.long 0
+	.else
+	.ifc \script, 0
+	.long 0
+	.else
+	.ifc \script, NULL
+	.long 0
+	.else
+	/* Self-relative, the one emit rule for every target (see
+	   docs/POINTER_MIGRATION.md). Script labels are global symbols, which ld64
+	   does not shift, so this folds to a stable link-time constant on Mach-O
+	   as well as ELF -- unlike the byte-packed MP2K song atoms. */
+	.long (\script - .)
+	.endif
+	.endif
+	.endif
 	.short \event_flag
-	.space 6  /* Padding to sizeof == 32*/
+	.space 2  /* Padding to sizeof == 24*/
 	.else
 	.int \script
 	.short \event_flag
@@ -84,11 +109,9 @@
 	.2byte \target_map_id & 0xFF  /* map num*/
 	.2byte \target_map_id >> 8    /* map group*/
 	/* Shares ObjectEventTemplate's layout: 24 bytes on GBA, 32 on a 64-bit host. */
-	.ifdef PORTABLE_ASM
-	.space 16 /* Padding*/
-	.else
+	/* ObjectEventTemplate is 24 bytes on every target now, so this pads the
+	   same amount everywhere -- it used to pad to 32 on a 64-bit host. */
 	.space 8  /* Padding*/
-	.endif
 	inc _num_npcs
 	.endm
 

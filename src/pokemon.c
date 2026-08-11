@@ -6767,8 +6767,12 @@ const u8 *GetTrainerPartnerName(void)
     }
 }
 
+// The two 16-bit halves only carry the low 32 bits of the pointer, which is
+// lossless on the GBA and a wild pointer on a 64-bit host -- the summary screen
+// crashed in StartMonSummaryAnimation with the top half sheared off.
+// PTR_REBASE32 restores it from the anchor; it is identity on ELF and the GBA.
 #define READ_PTR_FROM_TASK(taskId, dataId)                      \
-    (void *)(                                                   \
+    PTR_REBASE32(                                               \
     ((u16)(gTasks[taskId].data[dataId]) |                       \
     ((u16)(gTasks[taskId].data[dataId + 1]) << 16)))
 

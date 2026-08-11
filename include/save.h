@@ -16,27 +16,10 @@
 
 #define SPECIAL_SECTOR_SENTINEL 0xB39D
 
-#ifdef NATIVE_BUILD
-// On a 64-bit host, struct ObjectEventTemplate grows 24 -> 32 bytes because of
-// its script pointer, pushing SaveBlock1 512 bytes past its 4-sector budget.
-// The native port backs "flash" with a plain file rather than a 128 KiB chip,
-// so SaveBlock1 gets a fifth sector and everything after it shifts up.
-// NOTE: this makes the save layout incompatible with real Emerald .sav files.
-// Restoring compatibility means giving map scripts a 32-bit index table via
-// mapjson so the template can stay 24 bytes.
-#define SECTOR_ID_SAVEBLOCK2          0
-#define SECTOR_ID_SAVEBLOCK1_START    1
-#define SECTOR_ID_SAVEBLOCK1_END      5
-#define SECTOR_ID_PKMN_STORAGE_START  6
-#define SECTOR_ID_PKMN_STORAGE_END   14
-#define NUM_SECTORS_PER_SLOT         15
-// Save Slot 1: 0-14;  Save Slot 2: 15-29
-#define SECTOR_ID_HOF_1              30
-#define SECTOR_ID_HOF_2              31
-#define SECTOR_ID_TRAINER_HILL       32
-#define SECTOR_ID_RECORDED_BATTLE    33
-#define SECTORS_COUNT                34
-#else
+// The native port keeps the GBA layout: ObjectEventTemplate is held to 24 bytes
+// by storing its script as a 4-byte self-relative offset (see
+// include/global.fieldmap.h), so SaveBlock1 still fits 4 sectors and a .sav
+// stays interchangeable with real hardware.
 #define SECTOR_ID_SAVEBLOCK2          0
 #define SECTOR_ID_SAVEBLOCK1_START    1
 #define SECTOR_ID_SAVEBLOCK1_END      4
@@ -49,7 +32,6 @@
 #define SECTOR_ID_TRAINER_HILL       30
 #define SECTOR_ID_RECORDED_BATTLE    31
 #define SECTORS_COUNT                32
-#endif
 
 #define NUM_HOF_SECTORS 2
 

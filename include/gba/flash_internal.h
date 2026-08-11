@@ -1,13 +1,12 @@
 #ifndef GUARD_GBA_FLASH_INTERNAL_H
 #define GUARD_GBA_FLASH_INTERNAL_H
 
-// Size of the emulated flash backing store. The native 64-bit build needs a
-// fifth SaveBlock1 sector (see save.h), which pushes past a real 128 KiB chip.
-#ifdef NATIVE_BUILD
-#define FLASH_BACKING_SIZE (34 * 4096)
-#else
+// Size of the emulated flash backing store: a real 1 Mbit chip, on every
+// target. The native build used to need a 34th sector because SaveBlock1 spilled
+// into a fifth one on a 64-bit host; holding ObjectEventTemplate to 24 bytes
+// (see include/global.fieldmap.h) removed that, so the backing store is exactly
+// a cartridge again and .sav files interchange with real hardware.
 #define FLASH_BACKING_SIZE 131072
-#endif
 
 // Defined in agb_flash.c for the GBA build; src/stub.c supplies them under PORTABLE.
 u32 VerifyFlashSector(u16 sectorNum, u8 *src);
