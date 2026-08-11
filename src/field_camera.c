@@ -33,7 +33,7 @@ static void RedrawMapSliceEast(struct FieldCameraOffset *, const struct MapLayou
 static void RedrawMapSliceWest(struct FieldCameraOffset *, const struct MapLayout *);
 static void DrawWholeMapViewInternal(int, int, const struct MapLayout *);
 static void DrawMetatileAt(const struct MapLayout *, u32, int, int);
-static void DrawMetatile(s32, const u16 *, u32);
+static void DrawMetatile(s32, const u16 *, u32, u8);
 static void CameraPanningCB_PanAhead(void);
 
 static struct FieldCameraOffset sFieldCameraOffset;
@@ -388,7 +388,8 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
 
     if (offset >= 0)
     {
-        DrawMetatile(METATILE_LAYER_TYPE_COVERED, tiles, offset);
+        // Doors only ever belong to the map the player is on.
+        DrawMetatile(METATILE_LAYER_TYPE_COVERED, tiles, offset, 0);
         sFieldCameraOffset.copyBGToVRAM = TRUE;
     }
 }
@@ -396,24 +397,51 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
 static void DrawMetatileAt(const struct MapLayout *mapLayout, u32 offset, int x, int y)
 {
     u16 metatileId = MapGridGetMetatileIdAt(x, y);
-    const u16 *metatiles;
+    u8 bank = MapGridGetTilesetBankAt(x, y);
+    const struct Tileset *tileset;
 
     if (metatileId > NUM_METATILES_TOTAL)
         metatileId = 0;
+
+    // Bank 0 is the map this layout describes. A cell filled in from a
+    // connection carries its own map's bank instead, so its metatile id is read
+    // out of that map's tileset -- the id means nothing against ours, which is
+    // what drew a neighbouring town as rubble in the expanded viewport.
     if (metatileId < NUM_METATILES_IN_PRIMARY)
-    {
-        metatiles = mapLayout->primaryTileset->metatiles;
-    }
+        tileset = bank != 0 ? GetTilesetBankPrimary(bank) : mapLayout->primaryTileset;
     else
+        tileset = bank != 0 ? GetTilesetBankSecondary(bank) : mapLayout->secondaryTileset;
+
+    // A bank with no tileset registered means the layout was built without one
+    // (the Battle Pyramid and Trainer Hill generate their floors directly).
+    // Drawing against this map is what happened before banks existed.
+    if (tileset == NULL)
     {
-        metatiles = mapLayout->secondaryTileset->metatiles;
-        metatileId -= NUM_METATILES_IN_PRIMARY;
+        tileset = metatileId < NUM_METATILES_IN_PRIMARY ? mapLayout->primaryTileset
+                                                        : mapLayout->secondaryTileset;
+        bank = 0;
     }
-    DrawMetatile(MapGridGetMetatileLayerTypeAt(x, y), metatiles + metatileId * NUM_TILES_PER_METATILE, offset);
+
+    if (metatileId >= NUM_METATILES_IN_PRIMARY)
+        metatileId -= NUM_METATILES_IN_PRIMARY;
+
+    DrawMetatile(MapGridGetMetatileLayerTypeAt(x, y),
+                 tileset->metatiles + metatileId * NUM_TILES_PER_METATILE, offset, bank);
 }
 
-static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u32 offset)
+static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u32 offset, u8 bank)
 {
+    // All three layers take their tiles from the same metatile, so one plane
+    // records the bank for the whole 2x2 block. The renderer reads it; nothing
+    // else does.
+    if (sFieldTilemapBanks != NULL)
+    {
+        sFieldTilemapBanks[offset] = bank;
+        sFieldTilemapBanks[offset + 1] = bank;
+        sFieldTilemapBanks[offset + sTilesW] = bank;
+        sFieldTilemapBanks[offset + sTilesW + 1] = bank;
+    }
+
     switch (metatileLayerType)
     {
     case METATILE_LAYER_TYPE_SPLIT:

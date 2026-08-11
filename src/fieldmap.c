@@ -60,6 +60,7 @@ COMMON_DATA struct BackupMapLayout gBackupMapLayout = {0};
 
 static const struct ConnectionFlags sDummyConnectionFlags = {0};
 
+static void ResetTilesetBanks(void);
 static void InitMapLayoutData(const struct MapHeader *mapHeader);
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height);
 static void FillSouthConnection(struct MapHeader const *mapHeader, struct MapHeader const *connectedMapHeader, s32 offset);
@@ -108,12 +109,14 @@ void InitMapFromSavedGame(void)
 void InitBattlePyramidMap(bool8 setPlayerPosition)
 {
     CpuFastFill16(MAPGRID_UNDEFINED, sBackupMapData, sizeof(sBackupMapData));
+    ResetTilesetBanks();
     GenerateBattlePyramidFloorLayout(sBackupMapData, setPlayerPosition);
 }
 
 void InitTrainerHillMap(void)
 {
     CpuFastFill16(MAPGRID_UNDEFINED, sBackupMapData, sizeof(sBackupMapData));
+    ResetTilesetBanks();
     GenerateTrainerHillFloorLayout(sBackupMapData);
 }
 
@@ -139,6 +142,18 @@ static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tilese
     }
 
     return 0;
+}
+
+// Drops every bank but the current map's and clears the cell tags. The Battle
+// Pyramid and Trainer Hill generate their floors without going through
+// InitMapLayoutData, so without this they would draw against whatever banks the
+// previous map happened to register.
+static void ResetTilesetBanks(void)
+{
+    memset(sBackupMapBank, 0, sizeof(sBackupMapBank));
+    sTilesetBankCount = 0;
+    if (gMapHeader.mapLayout != NULL)
+        RegisterTilesetBank(gMapHeader.mapLayout->primaryTileset, gMapHeader.mapLayout->secondaryTileset);
 }
 
 const struct Tileset *GetTilesetBankPrimary(u8 bank)
@@ -460,9 +475,43 @@ s32 MapGridGetMetatileBehaviorAt(s32 x, s32 y)
     return UNPACK_BEHAVIOR(GetMetatileAttributesById(MapGridGetMetatileIdAt(x, y)));
 }
 
+// Attributes for a metatile that belongs to `bank` rather than to the map the
+// player is on. A bank with no tileset registered falls back to the current
+// map, which is what every lookup did before banks existed.
+static u16 GetMetatileAttributesByIdAndBank(u16 metatile, u8 bank)
+{
+    const struct Tileset *tileset;
+
+    if (metatile >= NUM_METATILES_TOTAL)
+        return MB_INVALID;
+
+    if (metatile < NUM_METATILES_IN_PRIMARY)
+        tileset = GetTilesetBankPrimary(bank);
+    else
+        tileset = GetTilesetBankSecondary(bank);
+
+    if (tileset == NULL)
+        return GetMetatileAttributesById(metatile);
+
+    if (metatile >= NUM_METATILES_IN_PRIMARY)
+        metatile -= NUM_METATILES_IN_PRIMARY;
+
+    return tileset->metatileAttributes[metatile];
+}
+
+// Which background layer a metatile's two halves are drawn to. This has to
+// follow the cell's own tileset like the metatile itself does, or a
+// neighbouring map's rooftops end up behind the layer that covers sprites.
+//
+// The behaviour lookup below deliberately does not do this. Behaviours drive
+// movement, and by the time the player can stand on a connected map's cells the
+// camera transition has already made that map the current one, so every cell
+// consulted for movement is bank 0 -- and leaving it alone keeps this change
+// unable to affect what the player can walk on.
 u8 MapGridGetMetatileLayerTypeAt(s32 x, s32 y)
 {
-    return UNPACK_LAYER_TYPE(GetMetatileAttributesById(MapGridGetMetatileIdAt(x, y)));
+    return UNPACK_LAYER_TYPE(GetMetatileAttributesByIdAndBank(MapGridGetMetatileIdAt(x, y),
+                                                              MapGridGetTilesetBankAt(x, y)));
 }
 
 void MapGridSetMetatileIdAt(s32 x, s32 y, u16 metatile)
