@@ -805,11 +805,17 @@ static const struct TouchButton sTouchButtons[] = {
 #define MAX_FINGERS 8
 struct Finger { SDL_FingerID id; float x, y; bool active; };
 static struct Finger sFingers[MAX_FINGERS];
-static bool sTouchUsed;   // hide the overlay until the screen is actually touched
+
+// Whether a controller is *connected* is the wrong question: one can sit
+// paired and idle while the game is played by touch, and the simulator exposes
+// a phantom pad that would hide the controls outright. Track which input was
+// used last instead -- press a controller and the pad goes away, touch the
+// screen and it comes back.
+static bool sPadActive;
 
 static bool ShowTouchOverlay(void)
 {
-    return MOBILE && sGamepad == NULL;
+    return MOBILE && !sPadActive;
 }
 
 static void SetFinger(SDL_FingerID id, float x, float y, bool down)
@@ -859,14 +865,27 @@ static u16 TouchKeys(void)
 
 static void DrawTouchOverlay(void)
 {
-    if (!ShowTouchOverlay() || !sTouchUsed)
+    // Shown whenever there is no controller, rather than waiting for a first
+    // touch: a pad nobody can see is a pad nobody knows to use.
+    if (!ShowTouchOverlay())
         return;
+
+    // The layout is in 240x160 units, but the renderer's logical size is the
+    // expanded viewport times the pixel scale, so the pad has to be mapped onto
+    // it -- drawn raw it lands in a corner a few pixels across. Scaling by the
+    // full logical extent also keeps the buttons where the hit test expects
+    // them, since touches are normalised against the whole window.
+    int lw = DISPLAY_WIDTH, lh = DISPLAY_HEIGHT;
+    SDL_RendererLogicalPresentation mode;
+    SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode);
+    float sx = (float)lw / DISPLAY_WIDTH;
+    float sy = (float)lh / DISPLAY_HEIGHT;
 
     u16 held = TouchKeys();
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
-        SDL_FRect r = { t->x, t->y, t->w, t->h };
+        SDL_FRect r = { t->x * sx, t->y * sy, t->w * sx, t->h * sy };
         bool on = (held & t->key) != 0;
         SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, on ? 140 : 60);
         SDL_RenderFillRect(sdlRenderer, &r);
@@ -995,10 +1014,18 @@ void ProcessEvents(void)
             break;
 
         // Capture pad presses too, so a controller can be rebound from itself.
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            // Deadzone: a resting stick drifts, and drift must not count as use.
+            if (event.gaxis.value > 8000 || event.gaxis.value < -8000)
+                sPadActive = true;
+            break;
+
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         case SDL_EVENT_GAMEPAD_BUTTON_UP:
         {
             bool8 down = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+            if (down)
+                sPadActive = true;
             if (down && SDL_GetAtomicInt(&sRebindIndex) >= 0)
             {
                 ApplyRebind(SDLK_UNKNOWN, 0, event.gbutton.button);
@@ -1014,14 +1041,19 @@ void ProcessEvents(void)
             break;
         }
 
+        // tfinger x/y are normalised 0..1 across the window; the pad layout is
+        // in 240x160 units, so scale on the way in or nothing ever hits.
         case SDL_EVENT_FINGER_DOWN:
+            sPadActive = false;
+            SDL_FALLTHROUGH;
         case SDL_EVENT_FINGER_MOTION:
-            sTouchUsed = true;
-            SetFinger(event.tfinger.fingerID, event.tfinger.x, event.tfinger.y, true);
+            SetFinger(event.tfinger.fingerID, event.tfinger.x * DISPLAY_WIDTH,
+                      event.tfinger.y * DISPLAY_HEIGHT, true);
             break;
         case SDL_EVENT_FINGER_UP:
         case SDL_EVENT_FINGER_CANCELED:
-            SetFinger(event.tfinger.fingerID, event.tfinger.x, event.tfinger.y, false);
+            SetFinger(event.tfinger.fingerID, event.tfinger.x * DISPLAY_WIDTH,
+                      event.tfinger.y * DISPLAY_HEIGHT, false);
             break;
 
         case SDL_EVENT_GAMEPAD_ADDED:
@@ -1029,6 +1061,7 @@ void ProcessEvents(void)
                 sGamepad = SDL_OpenGamepad(event.gdevice.which);
             break;
         case SDL_EVENT_GAMEPAD_REMOVED:
+            sPadActive = false;
             if (sGamepad && event.gdevice.which == SDL_GetGamepadID(sGamepad))
             {
                 SDL_CloseGamepad(sGamepad);
