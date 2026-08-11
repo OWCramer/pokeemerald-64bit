@@ -23,6 +23,9 @@
 #include <setjmp.h>
 
 #include <SDL3/SDL.h>
+// Must be included in the translation unit defining main(). On iOS this hands
+// the entry point to SDL so UIKit owns the run loop; on desktop it is inert.
+#include <SDL3/SDL_main.h>
 
 #include "global.h"
 #include "field_camera.h"
@@ -61,6 +64,60 @@ static SDL_AudioStream *sAudioStream;
 static jmp_buf sResetJmp;
 static SDL_AtomicInt sResetRequested;
 static SDL_Gamepad *sGamepad;
+// The framebuffer is ABGR1555 -- the GBA's own BGR555 order. No hardware
+// renderer on iOS accepts it: Metal and GLES take ARGB1555 (R and B swapped)
+// but not this. When the native format is refused we upload through a swizzle
+// instead, via a table so it costs one lookup per pixel rather than shifts.
+static bool sSwizzle1555;
+static u16 sSwizzleLut[0x10000];
+static u16 *sSwizzleBuf;
+
+// Ask the renderer what it accepts rather than trying and catching the
+// failure: SDL builds the Metal texture descriptor before its own format
+// guard, so an unsupported format aborts the process inside Metal validation
+// instead of returning an error we could recover from.
+static bool RendererSupportsFormat(SDL_PixelFormat want)
+{
+    SDL_PropertiesID props = SDL_GetRendererProperties(sdlRenderer);
+    const SDL_PixelFormat *fmts = (const SDL_PixelFormat *)
+        SDL_GetPointerProperty(props, SDL_PROP_RENDERER_TEXTURE_FORMATS_POINTER, NULL);
+
+    if (fmts == NULL)
+        return false;
+    for (int i = 0; fmts[i] != SDL_PIXELFORMAT_UNKNOWN; i++)
+    {
+        if (fmts[i] == want)
+            return true;
+    }
+    return false;
+}
+
+static SDL_Texture *CreateFrameTexture(int w, int h)
+{
+    SDL_Texture *tex = NULL;
+
+    if (RendererSupportsFormat(SDL_PIXELFORMAT_ABGR1555))
+        tex = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ABGR1555,
+                                SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (tex == NULL)
+    {
+        tex = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB1555,
+                                SDL_TEXTUREACCESS_STREAMING, w, h);
+        if (tex == NULL)
+            return NULL;
+        if (!sSwizzle1555)
+        {
+            for (int i = 0; i < 0x10000; i++)
+                sSwizzleLut[i] = (u16)((i & 0x8000) | ((i & 0x1F) << 10)
+                                       | (i & 0x03E0) | ((i >> 10) & 0x1F));
+            sSwizzle1555 = true;
+        }
+    }
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
+    return tex;
+}
+
 static int sTextureW, sTextureH;
 
 // Pixels are always drawn at a whole multiple of their true size, so nothing is
@@ -96,13 +153,9 @@ static void UpdateViewport(void)
 
     if (gRenderWidth != sTextureW || gRenderHeight != sTextureH)
     {
-        SDL_Texture *tex = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ABGR1555,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             gRenderWidth, gRenderHeight);
+        SDL_Texture *tex = CreateFrameTexture(gRenderWidth, gRenderHeight);
         if (tex != NULL)
         {
-            SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
-            SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
             if (sdlTexture)
                 SDL_DestroyTexture(sdlTexture);
             sdlTexture = tex;
@@ -201,10 +254,7 @@ int main(int argc, char **argv)
     SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
     SDL_RenderClear(sdlRenderer);
 
-    sdlTexture = SDL_CreateTexture(sdlRenderer,
-                                   SDL_PIXELFORMAT_ABGR1555,
-                                   SDL_TEXTUREACCESS_STREAMING,
-                                   DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    sdlTexture = CreateFrameTexture(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     if (sdlTexture == NULL)
     {
         DBGPRINTF("Texture could not be created! SDL_Error: %s\n", SDL_GetError());
@@ -1163,7 +1213,22 @@ void VDraw(SDL_Texture *texture)
     if (gRenderWidth != sTextureW || gRenderHeight != sTextureH)
         UpdateViewport();
 
-    SDL_UpdateTexture(texture, NULL, image, gRenderWidth * sizeof(Uint16));
+    if (sSwizzle1555)
+    {
+        size_t n = (size_t)gRenderWidth * gRenderHeight;
+        if (sSwizzleBuf == NULL)
+            sSwizzleBuf = SDL_malloc(sizeof(uint16_t) * 2048 * 2048   /* matches image[] above */);
+        if (sSwizzleBuf != NULL)
+        {
+            for (size_t i = 0; i < n; i++)
+                sSwizzleBuf[i] = sSwizzleLut[image[i]];
+            SDL_UpdateTexture(texture, NULL, sSwizzleBuf, gRenderWidth * sizeof(Uint16));
+        }
+    }
+    else
+    {
+        SDL_UpdateTexture(texture, NULL, image, gRenderWidth * sizeof(Uint16));
+    }
     REG_VCOUNT = 161; // prep for being in VBlank period
 }
 

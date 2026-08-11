@@ -15,6 +15,29 @@ TILE_RENDERER   := RENDERER_FAST_DRAW
 ifneq (,$(filter native,$(MAKECMDGOALS)))
   NATIVE64 := 1
 endif
+# iOS is arm64 Mach-O with mandatory PIE, exactly like macOS/arm64, so it reuses
+# the whole NATIVE64 path -- the anchor-offset pointer scheme, mach_o_symbols.py
+# and the alias-list link all apply unchanged. Only the target triple, sysroot
+# and SDL flags differ.
+ifneq (,$(filter ios,$(MAKECMDGOALS)))
+  NATIVE64 := 1
+  IOS := 1
+  SDL3 := 1
+endif
+IOS ?= 0
+ifeq ($(IOS),1)
+  IOS_SDK_NAME ?= iphonesimulator
+  IOS_MIN ?= 15.0
+  IOS_SYSROOT := $(shell xcrun --sdk $(IOS_SDK_NAME) --show-sdk-path)
+  ifeq ($(IOS_SDK_NAME),iphonesimulator)
+    IOS_TRIPLE := arm64-apple-ios$(IOS_MIN)-simulator
+  else
+    IOS_TRIPLE := arm64-apple-ios$(IOS_MIN)
+  endif
+  # Both the compiler and the assembler need this; the data assembly is a large
+  # part of the build and silently lands on the host target otherwise.
+  IOS_TARGET_FLAGS := -target $(IOS_TRIPLE) -isysroot $(IOS_SYSROOT)
+endif
 ifeq ($(NATIVE64),1)
   PORTABLE := 1
 endif
@@ -93,8 +116,20 @@ ifeq ($(NATIVE64),1)
 ifeq ($(SDL3),1)
   # SDL3 uses <SDL3/SDL.h>, and pkg-config already points at the parent dir.
   TARGET_PLATFORM := PLATFORM_SDL3
+  ifeq ($(IOS),1)
+    # Built by: cmake -DCMAKE_SYSTEM_NAME=iOS -DSDL_STATIC=ON ... (see PORTING.md)
+    IOS_SDL ?= $(CURDIR)/../SDL/install-iossim
+    SDL_CFLAGS := -I$(IOS_SDL)/include
+    SDL_LDFLAGS := -L$(IOS_SDL)/lib -lSDL3 \
+        -Wl,-framework,CoreMedia -Wl,-framework,CoreVideo -Wl,-framework,CoreAudio \
+        -Wl,-framework,AudioToolbox -Wl,-framework,AVFoundation -Wl,-framework,CoreBluetooth \
+        -Wl,-framework,CoreGraphics -Wl,-framework,CoreMotion -Wl,-framework,Foundation \
+        -Wl,-framework,GameController -Wl,-framework,Metal -Wl,-framework,OpenGLES \
+        -Wl,-framework,QuartzCore -Wl,-framework,UIKit -Wl,-weak_framework,CoreHaptics
+  else
   SDL_CFLAGS := $(shell pkg-config --cflags sdl3)
   SDL_LDFLAGS := $(shell pkg-config --libs sdl3)
+  endif
 else
   SDL_CFLAGS := $(shell sdl2-config --cflags) $(foreach d,$(shell sdl2-config --cflags),$(if $(filter -I%,$d),-I$(patsubst -I%,%,$d)/..))
   SDL_LDFLAGS := $(shell sdl2-config --libs)
@@ -200,8 +235,13 @@ ifeq ($(NATIVE64),1)
 # are gated by TARGET_PLATFORM, so a stale sdl2.o from the other configuration
 # links in and fails on removed SDL2 symbols.
 ifeq ($(SDL3),1)
+ifeq ($(IOS),1)
+PORTABLE_ROM_NAME := $(FILE_NAME)-ios
+PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/ios
+else
 PORTABLE_ROM_NAME := $(FILE_NAME)-sdl3
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/native-sdl3
+endif
 else
 PORTABLE_ROM_NAME := $(FILE_NAME)
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/native
@@ -251,7 +291,7 @@ ifeq ($(NATIVE64),1)
   # Symbols normally passed via --defsym are injected as .set lines instead.
   # The scriptptr helper adds a nesting level on top of already-deep map/script
   # macro chains, past clang's default limit of 20.
-  ASFLAGS := -arch arm64 -x assembler -c -Xclang -asm-macro-max-nesting-depth=200
+  ASFLAGS := -arch arm64 -x assembler -c -Xclang -asm-macro-max-nesting-depth=200 $(IOS_TARGET_FLAGS)
 else ifeq ($(PORTABLE),1)
   ASFLAGS := --32 --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1
 else
@@ -311,7 +351,15 @@ ifeq ($(PORTABLE),1)
   # runner on an older macOS would hit. Derived rather than hardcoded so it is
   # correct on any host. The native link reuses CFLAGS, so this covers both
   # compile and link.
-  ifeq ($(shell uname -s),Darwin)
+  ifeq ($(IOS),1)
+    # Both halves: this build preprocesses with CPPFLAGS and only then compiles
+    # the result with CFLAGS, so the target has to reach the preprocessor too.
+    # Without it every system header is evaluated against the macOS SDK --
+    # SDL_PLATFORM_IOS is never defined, so SDL_main.h does not rename main and
+    # the app dies at startup with "did you include SDL_main.h?".
+    CPPFLAGS += $(IOS_TARGET_FLAGS)
+    override CFLAGS += $(IOS_TARGET_FLAGS)
+  else ifeq ($(shell uname -s),Darwin)
     SDL3_LIBDIR := $(shell pkg-config --variable=libdir sdl3 2>/dev/null)
     MACOS_MIN ?= $(shell otool -l $(SDL3_LIBDIR)/libSDL3.dylib 2>/dev/null | \
                          awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $$2; exit}')
@@ -377,7 +425,7 @@ MAKEFLAGS += --no-print-directory
 .DELETE_ON_ERROR:
 
 RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidynonmodern generated clean-generated
-.PHONY: all rom modern compare gba native
+.PHONY: all rom modern compare gba native ios
 .PHONY: $(RULES_NO_SCAN)
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
@@ -443,6 +491,8 @@ modern: all
 compare: all
 gba: all
 native: all
+
+ios: all
 native3: all
 
 # Other rules
