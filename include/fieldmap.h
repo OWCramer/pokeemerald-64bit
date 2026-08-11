@@ -54,6 +54,7 @@ const struct Tileset *GetTilesetBankPrimary(u8 bank);
 const struct Tileset *GetTilesetBankSecondary(u8 bank);
 u8 GetTilesetBankCount(void);
 void LoadTilesetBanks(void);
+const u8 *GetTilesetBankRemap(void);
 s32 MapGridGetMetatileBehaviorAt(s32 x, s32 y);
 void MapGridSetMetatileIdAt(s32 x, s32 y, u16 metatile);
 void MapGridSetMetatileEntryAt(s32 x, s32 y, u16 metatile);

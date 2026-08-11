@@ -51,6 +51,14 @@ struct TilesetBank
 
 static struct TilesetBank sTilesetBanks[MAX_TILESET_BANKS];
 static u8 sTilesetBankCount;
+
+// A map transition renumbers the banks: the map just walked into becomes bank 0
+// and the one just left becomes one of its connections. Anything already tagged
+// with the old numbering has to be translated, so the registry from before the
+// rebuild is kept long enough to match the pairs up.
+static struct TilesetBank sPrevTilesetBanks[MAX_TILESET_BANKS];
+static u8 sPrevTilesetBankCount;
+static u8 sTilesetBankRemap[MAX_TILESET_BANKS];
 EWRAM_DATA struct MapHeader gMapHeader = {0};
 EWRAM_DATA struct Camera gCamera = {0};
 EWRAM_DATA static struct ConnectionFlags sMapConnectionFlags = {0};
@@ -175,6 +183,37 @@ u8 GetTilesetBankCount(void)
     return sTilesetBankCount;
 }
 
+// Maps a bank id from before the last layout rebuild to the same tileset pair's
+// id now. A pair that is no longer on screen maps to bank 0 -- those cells
+// belong to a map this one is not connected to, so they are stale either way,
+// and bank 0 is what they would have been drawn with before banks existed.
+static void BuildTilesetBankRemap(void)
+{
+    u8 old, i;
+
+    for (old = 0; old < MAX_TILESET_BANKS; old++)
+    {
+        sTilesetBankRemap[old] = 0;
+        if (old >= sPrevTilesetBankCount)
+            continue;
+
+        for (i = 0; i < sTilesetBankCount; i++)
+        {
+            if (sTilesetBanks[i].primary == sPrevTilesetBanks[old].primary
+             && sTilesetBanks[i].secondary == sPrevTilesetBanks[old].secondary)
+            {
+                sTilesetBankRemap[old] = i;
+                break;
+            }
+        }
+    }
+}
+
+const u8 *GetTilesetBankRemap(void)
+{
+    return sTilesetBankRemap;
+}
+
 u8 MapGridGetTilesetBankAt(s32 x, s32 y)
 {
     if (!AreCoordsWithinMapGridBounds(x, y))
@@ -189,6 +228,8 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
 
     // Everything defaults to the current map's bank; connections overwrite the
     // cells they fill.
+    memcpy(sPrevTilesetBanks, sTilesetBanks, sizeof(sTilesetBanks));
+    sPrevTilesetBankCount = sTilesetBankCount;
     memset(sBackupMapBank, 0, sizeof(sBackupMapBank));
     sTilesetBankCount = 0;
     RegisterTilesetBank(mapLayout->primaryTileset, mapLayout->secondaryTileset);
@@ -198,10 +239,14 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
     gBackupMapLayout.height = mapLayout->height + MAP_OFFSET_H + MAP_BORDER_EXTRA * 2;
 
     if (gBackupMapLayout.width * gBackupMapLayout.height > MAX_MAP_DATA_SIZE)
+    {
+        BuildTilesetBankRemap();
         return;
+    }
 
     InitBackupMapLayoutData(mapLayout->map, mapLayout->width, mapLayout->height);
     InitBackupMapLayoutConnections(mapHeader);
+    BuildTilesetBankRemap();
 }
 
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)

@@ -831,8 +831,11 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
     CopySecondaryTilesetToVramUsingHeap(gMapHeader.mapLayout);
     LoadSecondaryTilesetPalette(gMapHeader.mapLayout);
     // InitMap above rebuilt the layout, so the connected maps -- and the banks
-    // their cells are tagged with -- have just changed.
+    // their cells are tagged with -- have just changed. The tilemap survives a
+    // seam crossing untouched apart from the slice that scrolled in, so its
+    // tags have to be translated into the new numbering rather than redrawn.
     LoadTilesetBanks();
+    RemapFieldTilemapBanks();
 
     for (paletteIndex = NUM_PALS_IN_PRIMARY; paletteIndex < NUM_PALS_TOTAL; paletteIndex++)
         ApplyWeatherColorMapToPal(paletteIndex);
