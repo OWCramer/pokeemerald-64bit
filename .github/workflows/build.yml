@@ -1,8 +1,11 @@
 name: Build
 
 on:
+  # Only the main branch and release tags build on push. Feature branches build
+  # through the pull_request trigger below, so an open PR does not run twice
+  # (once for its push and once for the PR) on the same commit.
   push:
-    branches: [native-arm64, linux-support]
+    branches: [native-arm64]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
