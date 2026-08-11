@@ -237,7 +237,12 @@ int main(int argc, char **argv)
 
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
 #if MOBILE
-    flags |= SDL_WINDOW_FULLSCREEN;
+    // Without HIGH_PIXEL_DENSITY the drawable is the window's size in *points*,
+    // so on a 3x phone the game renders at a third of the panel's resolution and
+    // iOS upscales the result -- 912x420 on a 2736x1260 screen. Asking for the
+    // native drawable makes the pixel-exact scaling actually land on real
+    // pixels, and gives the expanded viewport far more to work with.
+    flags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 #endif
     sdlWindow = SDL_CreateWindow("Pok\xC3\xA9mon Emerald",
                                  DISPLAY_WIDTH * 3, DISPLAY_HEIGHT * 3, flags);
@@ -791,21 +796,27 @@ void Platform_GetBindLabel(u8 i, char *out, int outSize)
         snprintf(out, outSize, "%s%s", mods, k);
 }
 
-// On-screen pad, laid out in the same 240x160 logical space the game renders
-// into so the hit boxes and the drawn buttons cannot drift apart. Only shown on
-// mobile, and hidden while a controller is attached.
-struct TouchButton { float x, y, w, h; u16 key; };
+// On-screen pad, as fractions of the renderer's logical extent.
+//
+// That is the space SDL reports touches in: with a logical presentation active
+// it transforms finger events into render units, so a tap arrives as e.g.
+// (267, 124) -- and negative in the letterbox, not 0..1 and not window pixels.
+// Laying the pad out anywhere else means the hit boxes and the drawn buttons
+// live in different spaces. `half` is a fraction of the logical *height* for
+// both axes so buttons stay square; the presentation preserves aspect, so
+// square here is square on screen.
+struct TouchButton { float cx, cy, half; u16 key; };
 static const struct TouchButton sTouchButtons[] = {
-    { 10,  86, 22, 22, DPAD_LEFT  },
-    { 54,  86, 22, 22, DPAD_RIGHT },
-    { 32,  64, 22, 22, DPAD_UP    },
-    { 32, 108, 22, 22, DPAD_DOWN  },
-    { 206, 92, 24, 24, A_BUTTON   },
-    { 176,106, 24, 24, B_BUTTON   },
-    { 132,138, 32, 14, START_BUTTON  },
-    {  76,138, 32, 14, SELECT_BUTTON },
-    {  10,  8, 26, 14, L_BUTTON   },
-    { 204,  8, 26, 14, R_BUTTON   },
+    { 0.080f, 0.55f, 0.060f, DPAD_LEFT  },
+    { 0.200f, 0.55f, 0.060f, DPAD_RIGHT },
+    { 0.140f, 0.38f, 0.060f, DPAD_UP    },
+    { 0.140f, 0.72f, 0.060f, DPAD_DOWN  },
+    { 0.930f, 0.52f, 0.070f, A_BUTTON   },
+    { 0.820f, 0.70f, 0.070f, B_BUTTON   },
+    { 0.560f, 0.90f, 0.048f, START_BUTTON  },
+    { 0.440f, 0.90f, 0.048f, SELECT_BUTTON },
+    { 0.070f, 0.10f, 0.055f, L_BUTTON   },
+    { 0.930f, 0.10f, 0.055f, R_BUTTON   },
 };
 #define NUM_TOUCH_BUTTONS ((int)(sizeof(sTouchButtons) / sizeof(sTouchButtons[0])))
 
@@ -850,11 +861,34 @@ static void SetFinger(SDL_FingerID id, float x, float y, bool down)
     }
 }
 
+// SDL_ConvertEventToRenderCoordinates puts touches in the renderer's *logical*
+// space, and our overlay draws into that same space. That is the render size
+// multiplied by the integer scale -- not gRenderWidth -- so ask SDL for it
+// rather than recomputing, and the pad follows whatever presentation
+// UpdateViewport settled on.
+static bool LogicalExtent(float *w, float *h)
+{
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode;
+
+    if (sdlRenderer == NULL ||
+        !SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode) ||
+        lw <= 0 || lh <= 0)
+        return false;
+
+    *w = (float)lw;
+    *h = (float)lh;
+    return true;
+}
+
 static u16 TouchKeys(void)
 {
     u16 out = 0;
-    if (!ShowTouchOverlay())
+    float lw, lh;
+
+    if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
         return 0;
+
     for (int f = 0; f < MAX_FINGERS; f++)
     {
         if (!sFingers[f].active)
@@ -862,10 +896,14 @@ static u16 TouchKeys(void)
         for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
         {
             const struct TouchButton *t = &sTouchButtons[b];
-            // Hit boxes are padded outward; thumbs are imprecise and a miss on
-            // a d-pad is far more annoying than an occasional overlap.
-            if (sFingers[f].x >= t->x - 4 && sFingers[f].x <= t->x + t->w + 4 &&
-                sFingers[f].y >= t->y - 4 && sFingers[f].y <= t->y + t->h + 4)
+            // Padded outward; thumbs are imprecise and missing a d-pad is far
+            // more annoying than an occasional overlap.
+            float pad = 0.015f;
+            float hy = t->half + pad;
+            float hx = hy * lh / lw;
+
+            if (SDL_fabsf(sFingers[f].x - t->cx) <= hx &&
+                SDL_fabsf(sFingers[f].y - t->cy) <= hy)
                 out |= t->key;
         }
     }
@@ -876,29 +914,22 @@ static void DrawTouchOverlay(void)
 {
     // Shown whenever there is no controller, rather than waiting for a first
     // touch: a pad nobody can see is a pad nobody knows to use.
-    if (!ShowTouchOverlay())
-        return;
+    float lw, lh;
 
-    // The layout is in 240x160 units, but the renderer's logical size is the
-    // expanded viewport times the pixel scale, so the pad has to be mapped onto
-    // it -- drawn raw it lands in a corner a few pixels across. Scaling by the
-    // full logical extent also keeps the buttons where the hit test expects
-    // them, since touches are normalised against the whole window.
-    int lw = DISPLAY_WIDTH, lh = DISPLAY_HEIGHT;
-    SDL_RendererLogicalPresentation mode;
-    SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode);
-    float sx = (float)lw / DISPLAY_WIDTH;
-    float sy = (float)lh / DISPLAY_HEIGHT;
+    if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
+        return;
 
     u16 held = TouchKeys();
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
-        SDL_FRect r = { t->x * sx, t->y * sy, t->w * sx, t->h * sy };
+        float h = t->half * lh;
+        SDL_FRect r = { t->cx * lw - h, t->cy * lh - h, h * 2, h * 2 };
         bool on = (held & t->key) != 0;
-        SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, on ? 140 : 60);
+
+        SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, on ? 150 : 55);
         SDL_RenderFillRect(sdlRenderer, &r);
-        SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 120);
+        SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 110);
         SDL_RenderRect(sdlRenderer, &r);
     }
     SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
@@ -1050,20 +1081,24 @@ void ProcessEvents(void)
             break;
         }
 
-        // tfinger x/y are normalised 0..1 across the window; the pad layout is
-        // in 240x160 units, so scale on the way in or nothing ever hits.
+        // Already converted to logical render coordinates above; the layout is
+        // in fractions of that extent, so divide by it on the way in.
         case SDL_EVENT_FINGER_DOWN:
             sPadActive = false;
             SDL_FALLTHROUGH;
         case SDL_EVENT_FINGER_MOTION:
-            SetFinger(event.tfinger.fingerID, event.tfinger.x * DISPLAY_WIDTH,
-                      event.tfinger.y * DISPLAY_HEIGHT, true);
-            break;
         case SDL_EVENT_FINGER_UP:
         case SDL_EVENT_FINGER_CANCELED:
-            SetFinger(event.tfinger.fingerID, event.tfinger.x * DISPLAY_WIDTH,
-                      event.tfinger.y * DISPLAY_HEIGHT, false);
+        {
+            float lw, lh;
+            bool down = (event.type == SDL_EVENT_FINGER_DOWN ||
+                         event.type == SDL_EVENT_FINGER_MOTION);
+
+            if (LogicalExtent(&lw, &lh))
+                SetFinger(event.tfinger.fingerID, event.tfinger.x / lw,
+                          event.tfinger.y / lh, down);
             break;
+        }
 
         case SDL_EVENT_GAMEPAD_ADDED:
             if (sGamepad == NULL)
@@ -1250,10 +1285,13 @@ void VDraw(SDL_Texture *texture)
         frame++;
     }
 
-    // SetRenderExpansionAllowed() runs on the game thread, so the render size
-    // can change between frames without a window event.
-    if (gRenderWidth != sTextureW || gRenderHeight != sTextureH)
-        UpdateViewport();
+    // Unconditionally, not just when the render size changed: that test could
+    // only ever fire as a *result* of this call, so it never re-ran. On iOS the
+    // real drawable size is not known until the scene lays out, well after the
+    // window is created, and the stale size was being stretched over the whole
+    // screen -- a non-integer upscale that blurred the game and everything
+    // composited with it. Cheap enough to do every frame.
+    UpdateViewport();
 
     if (sSwizzle1555)
     {

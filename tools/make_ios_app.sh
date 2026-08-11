@@ -27,7 +27,13 @@ if [ -d appicons/appicon.icon ]; then
     xcrun actool appicons/appicon.icon --compile "$APP" --platform "$PLATFORM" \
         --minimum-deployment-target 15.0 \
         --output-partial-info-plist /tmp/icon-partial.plist >/dev/null 2>&1 \
-        && ICON_KEYS='<key>CFBundleIconName</key><string>appicon</string>' \
+        && ICON_KEYS='<key>CFBundleIconName</key><string>appicon</string>
+    <key>CFBundleIcons</key>
+    <dict><key>CFBundlePrimaryIcon</key>
+    <dict><key>CFBundleIconName</key><string>appicon</string></dict></dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict><key>CFBundlePrimaryIcon</key>
+    <dict><key>CFBundleIconName</key><string>appicon</string></dict></dict>' \
         || ICON_KEYS=''
 else
     ICON_KEYS=''
