@@ -879,7 +879,7 @@ static void LoadMapFromWarp(bool32 a1)
 
     if (a1 != TRUE && isIndoors)
     {
-        UpdateTVScreensOnMap(gBackupMapLayout.width, gBackupMapLayout.height);
+        UpdateTVScreensOnMap(MAP_GRID_VANILLA_WIDTH, MAP_GRID_VANILLA_HEIGHT);
         InitSecretBaseAppearance(TRUE);
     }
 }

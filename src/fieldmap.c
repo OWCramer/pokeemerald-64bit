@@ -50,9 +50,13 @@ static bool8 IsCoordInIncomingConnectingMap(s32 coord, s32 srcMax, s32 destMax, 
 
 #define GetBorderBlockAt(x, y) (gMapHeader.mapLayout->border[((x + 1) & 1) + (((y + 1) & 1) << 1)] | MAPGRID_IMPASSABLE)
 
-#define AreCoordsWithinMapGridBounds(x, y) (x >= 0 && x < gBackupMapLayout.width && y >= 0 && y < gBackupMapLayout.height)
+// Map coordinates are offset by MAP_BORDER_EXTRA to reach a layout index; the
+// coordinate space itself is unchanged.
+#define MapGridIndex(x, y) (((x) + MAP_BORDER_EXTRA) + gBackupMapLayout.width * ((y) + MAP_BORDER_EXTRA))
 
-#define GetMapGridBlockAt(x, y) (AreCoordsWithinMapGridBounds(x, y) ? gBackupMapLayout.map[x + gBackupMapLayout.width * y] : GetBorderBlockAt(x, y))
+#define AreCoordsWithinMapGridBounds(x, y) ((x) + MAP_BORDER_EXTRA >= 0 && (x) + MAP_BORDER_EXTRA < gBackupMapLayout.width && (y) + MAP_BORDER_EXTRA >= 0 && (y) + MAP_BORDER_EXTRA < gBackupMapLayout.height)
+
+#define GetMapGridBlockAt(x, y) (AreCoordsWithinMapGridBounds(x, y) ? gBackupMapLayout.map[MapGridIndex(x, y)] : GetBorderBlockAt(x, y))
 
 const struct MapHeader *const GetMapHeaderFromConnection(const struct MapConnection *connection)
 {
@@ -73,7 +77,7 @@ void InitMapFromSavedGame(void)
     SetOccupiedSecretBaseEntranceMetatiles(gMapHeader.events);
     LoadSavedMapView();
     RunOnLoadMapScript();
-    UpdateTVScreensOnMap(gBackupMapLayout.width, gBackupMapLayout.height);
+    UpdateTVScreensOnMap(MAP_GRID_VANILLA_WIDTH, MAP_GRID_VANILLA_HEIGHT);
 }
 
 void InitBattlePyramidMap(bool8 setPlayerPosition)
@@ -94,8 +98,8 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
     CpuFastFill16(MAPGRID_UNDEFINED, sBackupMapData, sizeof(sBackupMapData));
 
     gBackupMapLayout.map = sBackupMapData;
-    gBackupMapLayout.width = mapLayout->width + MAP_OFFSET_W;
-    gBackupMapLayout.height = mapLayout->height + MAP_OFFSET_H;
+    gBackupMapLayout.width = mapLayout->width + MAP_OFFSET_W + MAP_BORDER_EXTRA * 2;
+    gBackupMapLayout.height = mapLayout->height + MAP_OFFSET_H + MAP_BORDER_EXTRA * 2;
 
     if (gBackupMapLayout.width * gBackupMapLayout.height > MAX_MAP_DATA_SIZE)
         return;
@@ -109,11 +113,11 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
     u16 *dest;
     s32 y;
     dest = gBackupMapLayout.map;
-    dest += gBackupMapLayout.width * MAP_OFFSET + MAP_OFFSET;
+    dest += gBackupMapLayout.width * MAP_BORDER_TOTAL + MAP_BORDER_TOTAL;
     for (y = 0; y < height; y++)
     {
         CpuCopy16(map, dest, width * 2);
-        dest += width + MAP_OFFSET_W;
+        dest += gBackupMapLayout.width;
         map += width;
     }
 }
@@ -177,6 +181,7 @@ static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHea
 
 static void FillSouthConnection(const struct MapHeader *mapHeader, const struct MapHeader *connectedMapHeader, s32 offset)
 {
+    s32 fillHeight;
     s32 x, y;
     s32 x2;
     s32 width;
@@ -186,8 +191,8 @@ static void FillSouthConnection(const struct MapHeader *mapHeader, const struct 
         return;
 
     cWidth = connectedMapHeader->mapLayout->width;
-    x = offset + MAP_OFFSET;
-    y = mapHeader->mapLayout->height + MAP_OFFSET;
+    x = offset + MAP_BORDER_TOTAL;
+    y = mapHeader->mapLayout->height + MAP_BORDER_TOTAL;
     if (x < 0)
     {
         x2 = -x;
@@ -207,11 +212,17 @@ static void FillSouthConnection(const struct MapHeader *mapHeader, const struct 
             width = gBackupMapLayout.width - x;
     }
 
-    FillConnection(x, y, connectedMapHeader, x2, /*y2*/ 0, width, /*height*/ MAP_OFFSET);
+    fillHeight = MAP_BORDER_TOTAL;
+    if (fillHeight > connectedMapHeader->mapLayout->height)
+        fillHeight = connectedMapHeader->mapLayout->height;
+    if (y + fillHeight > gBackupMapLayout.height)
+        fillHeight = gBackupMapLayout.height - y;
+    FillConnection(x, y, connectedMapHeader, x2, /*y2*/ 0, width, fillHeight);
 }
 
 static void FillNorthConnection(const struct MapHeader *mapHeader, const struct MapHeader *connectedMapHeader, s32 offset)
 {
+    s32 fillHeight;
     s32 x;
     s32 x2, y2;
     s32 width;
@@ -222,8 +233,9 @@ static void FillNorthConnection(const struct MapHeader *mapHeader, const struct 
 
     cWidth = connectedMapHeader->mapLayout->width;
     cHeight = connectedMapHeader->mapLayout->height;
-    x = offset + MAP_OFFSET;
-    y2 = cHeight - MAP_OFFSET;
+    x = offset + MAP_BORDER_TOTAL;
+    fillHeight = (cHeight < MAP_BORDER_TOTAL) ? cHeight : MAP_BORDER_TOTAL;
+    y2 = cHeight - fillHeight;
     if (x < 0)
     {
         x2 = -x;
@@ -243,11 +255,12 @@ static void FillNorthConnection(const struct MapHeader *mapHeader, const struct 
             width = gBackupMapLayout.width - x;
     }
 
-    FillConnection(x, /*y*/ 0, connectedMapHeader, x2, y2, width, /*height*/ MAP_OFFSET);
+    FillConnection(x, MAP_BORDER_TOTAL - fillHeight, connectedMapHeader, x2, y2, width, fillHeight);
 }
 
 static void FillWestConnection(const struct MapHeader *mapHeader, const struct MapHeader *connectedMapHeader, s32 offset)
 {
+    s32 fillWidth;
     s32 y;
     s32 x2, y2;
     s32 height;
@@ -258,8 +271,9 @@ static void FillWestConnection(const struct MapHeader *mapHeader, const struct M
 
     cWidth = connectedMapHeader->mapLayout->width;
     cHeight = connectedMapHeader->mapLayout->height;
-    y = offset + MAP_OFFSET;
-    x2 = cWidth - MAP_OFFSET;
+    y = offset + MAP_BORDER_TOTAL;
+    fillWidth = (cWidth < MAP_BORDER_TOTAL) ? cWidth : MAP_BORDER_TOTAL;
+    x2 = cWidth - fillWidth;
     if (y < 0)
     {
         y2 = -y;
@@ -278,11 +292,12 @@ static void FillWestConnection(const struct MapHeader *mapHeader, const struct M
             height = gBackupMapLayout.height - y;
     }
 
-    FillConnection(/*x*/ 0, y, connectedMapHeader, x2, y2, /*width*/ MAP_OFFSET, height);
+    FillConnection(MAP_BORDER_TOTAL - fillWidth, y, connectedMapHeader, x2, y2, fillWidth, height);
 }
 
 static void FillEastConnection(const struct MapHeader *mapHeader, const struct MapHeader *connectedMapHeader, s32 offset)
 {
+    s32 fillWidth;
     s32 x, y;
     s32 y2;
     s32 height;
@@ -291,8 +306,8 @@ static void FillEastConnection(const struct MapHeader *mapHeader, const struct M
         return;
 
     cHeight = connectedMapHeader->mapLayout->height;
-    x = mapHeader->mapLayout->width + MAP_OFFSET;
-    y = offset + MAP_OFFSET;
+    x = mapHeader->mapLayout->width + MAP_BORDER_TOTAL;
+    y = offset + MAP_BORDER_TOTAL;
     if (y < 0)
     {
         y2 = -y;
@@ -311,7 +326,12 @@ static void FillEastConnection(const struct MapHeader *mapHeader, const struct M
             height = gBackupMapLayout.height - y;
     }
 
-    FillConnection(x, y, connectedMapHeader, /*x2*/ 0, y2, /*width*/ MAP_OFFSET + 1, height);
+    fillWidth = MAP_BORDER_TOTAL + 1;
+    if (fillWidth > connectedMapHeader->mapLayout->width)
+        fillWidth = connectedMapHeader->mapLayout->width;
+    if (x + fillWidth > gBackupMapLayout.width)
+        fillWidth = gBackupMapLayout.width - x;
+    FillConnection(x, y, connectedMapHeader, /*x2*/ 0, y2, fillWidth, height);
 }
 
 u8 MapGridGetElevationAt(s32 x, s32 y)
@@ -359,8 +379,8 @@ void MapGridSetMetatileIdAt(s32 x, s32 y, u16 metatile)
     if (AreCoordsWithinMapGridBounds(x, y))
     {
         // Elevation is ignored in the argument, but copy metatile ID and collision
-        gBackupMapLayout.map[x + y * gBackupMapLayout.width] &= MAPGRID_ELEVATION_MASK;
-        gBackupMapLayout.map[x + y * gBackupMapLayout.width] |= metatile & ~MAPGRID_ELEVATION_MASK;
+        gBackupMapLayout.map[MapGridIndex(x, y)] &= MAPGRID_ELEVATION_MASK;
+        gBackupMapLayout.map[MapGridIndex(x, y)] |= metatile & ~MAPGRID_ELEVATION_MASK;
     }
 }
 
@@ -368,7 +388,7 @@ void MapGridSetMetatileEntryAt(s32 x, s32 y, u16 metatile)
 {
     if (AreCoordsWithinMapGridBounds(x, y))
     {
-        gBackupMapLayout.map[x + gBackupMapLayout.width * y] = metatile;
+        gBackupMapLayout.map[MapGridIndex(x, y)] = metatile;
     }
 }
 
@@ -401,7 +421,7 @@ void SaveMapView(void)
     for (i = y; i < y + MAP_OFFSET_H; i++)
     {
         for (j = x; j < x + MAP_OFFSET_W; j++)
-            *mapView++ = sBackupMapData[width * i + j];
+            *mapView++ = sBackupMapData[width * (i + MAP_BORDER_EXTRA) + (j + MAP_BORDER_EXTRA)];
     }
 }
 
@@ -455,8 +475,8 @@ static void LoadSavedMapView(void)
 
         for (j = x; j < x + MAP_OFFSET_W; j++)
         {
-            if (!SkipCopyingMetatileFromSavedMap(&sBackupMapData[j + width * i], width, yMode))
-                sBackupMapData[j + width * i] = *mapView;
+            if (!SkipCopyingMetatileFromSavedMap(&sBackupMapData[(j + MAP_BORDER_EXTRA) + width * (i + MAP_BORDER_EXTRA)], width, yMode))
+                sBackupMapData[(j + MAP_BORDER_EXTRA) + width * (i + MAP_BORDER_EXTRA)] = *mapView;
             mapView++;
         }
     }
@@ -512,7 +532,7 @@ static void MoveMapViewToBackup(u8 direction)
     {
         for (x = 0; x < x2; x++)
         {
-            sBackupMapData[x + x0 + width * (y + y0)] = mapView[i + x + MAP_OFFSET_W * (j + y)];
+            sBackupMapData[(x + x0 + MAP_BORDER_EXTRA) + width * (y + y0 + MAP_BORDER_EXTRA)] = mapView[i + x + MAP_OFFSET_W * (j + y)];
         }
     }
 
@@ -524,7 +544,7 @@ s32 GetMapBorderIdAt(s32 x, s32 y)
     if (GetMapGridBlockAt(x, y) == MAPGRID_UNDEFINED)
         return CONNECTION_INVALID;
 
-    if (x >= (gBackupMapLayout.width - (MAP_OFFSET + 1)))
+    if (x >= (MAP_GRID_VANILLA_WIDTH - (MAP_OFFSET + 1)))
     {
         if (!sMapConnectionFlags.east)
             return CONNECTION_INVALID;
@@ -538,7 +558,7 @@ s32 GetMapBorderIdAt(s32 x, s32 y)
 
         return CONNECTION_WEST;
     }
-    else if (y >= (gBackupMapLayout.height - MAP_OFFSET))
+    else if (y >= (MAP_GRID_VANILLA_HEIGHT - MAP_OFFSET))
     {
         if (!sMapConnectionFlags.south)
             return CONNECTION_INVALID;
@@ -774,9 +794,9 @@ void MapGridSetMetatileImpassabilityAt(s32 x, s32 y, bool32 impassable)
     if (AreCoordsWithinMapGridBounds(x, y))
     {
         if (impassable)
-            gBackupMapLayout.map[x + gBackupMapLayout.width * y] |= MAPGRID_COLLISION_MASK;
+            gBackupMapLayout.map[MapGridIndex(x, y)] |= MAPGRID_COLLISION_MASK;
         else
-            gBackupMapLayout.map[x + gBackupMapLayout.width * y] &= ~MAPGRID_COLLISION_MASK;
+            gBackupMapLayout.map[MapGridIndex(x, y)] &= ~MAPGRID_COLLISION_MASK;
     }
 }
 

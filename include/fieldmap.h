@@ -7,7 +7,21 @@
 #define NUM_METATILES_TOTAL 1024
 #define NUM_PALS_IN_PRIMARY 6
 #define NUM_PALS_TOTAL 13
-#define MAX_MAP_DATA_SIZE 10240
+// The backup layout carries this much border around the map, on top of
+// MAP_OFFSET, so the expanded viewport has real map (and connected-map) data to
+// show instead of falling back to border metatiles. This is buffer margin only:
+// MAP_OFFSET still defines the coordinate space that object events, warps and
+// gSaveBlock1Ptr->pos live in, so saves are unaffected.
+#define MAP_BORDER_EXTRA 64
+#define MAP_BORDER_TOTAL (MAP_OFFSET + MAP_BORDER_EXTRA)
+
+// The layout carries MAP_BORDER_EXTRA of spare margin on every side; these are
+// the dimensions the map itself occupies, which is what edge tests and
+// whole-map scans want rather than the padded buffer size.
+#define MAP_GRID_VANILLA_WIDTH  (gBackupMapLayout.width  - MAP_BORDER_EXTRA * 2)
+#define MAP_GRID_VANILLA_HEIGHT (gBackupMapLayout.height - MAP_BORDER_EXTRA * 2)
+
+#define MAX_MAP_DATA_SIZE 131072
 
 #define NUM_TILES_PER_METATILE 8
 

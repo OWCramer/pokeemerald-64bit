@@ -1232,7 +1232,7 @@ static u8 GetPostBattleDirectionHintTextIndex(int *hintType, u8 minDistanceForEx
     int x, y;
     u8 textIndex = 0;
     u16 *map = gBackupMapLayout.map;
-    map += gBackupMapLayout.width * MAP_OFFSET + MAP_OFFSET;
+    map += gBackupMapLayout.width * MAP_BORDER_TOTAL + MAP_BORDER_TOTAL;
 
     for (y = 0; y < 32; y++)
     {
@@ -1539,8 +1539,8 @@ void GenerateBattlePyramidFloorLayout(u16 *backupMapData, bool8 setPlayerPositio
         gBackupMapLayout.width = mapLayout->width * PYRAMID_FLOOR_SQUARES_WIDE + MAP_OFFSET_W;
         gBackupMapLayout.height = mapLayout->height * PYRAMID_FLOOR_SQUARES_HIGH + MAP_OFFSET_H;
         map = gBackupMapLayout.map;
-        map += gBackupMapLayout.width * (MAP_OFFSET + (i / PYRAMID_FLOOR_SQUARES_WIDE * mapLayout->height))
-            +  MAP_OFFSET + (i % PYRAMID_FLOOR_SQUARES_WIDE * mapLayout->width);
+        map += gBackupMapLayout.width * (MAP_BORDER_TOTAL + (i / PYRAMID_FLOOR_SQUARES_WIDE * mapLayout->height))
+            +  MAP_BORDER_TOTAL + (i % PYRAMID_FLOOR_SQUARES_WIDE * mapLayout->width);
         for (y = 0; y < mapLayout->height; y++)
         {
             for (x = 0; x < mapLayout->width; x++)
