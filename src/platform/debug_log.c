@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #define EMERALD_LOG_PATH "emerald_debug.log"
 
@@ -22,7 +23,20 @@ void EmeraldLog(const char *fmt, ...)
     if (!tried)
     {
         tried = 1;
+        // Prefer the working directory so a dev build drops the log next to the
+        // binary. Inside an .app the working directory is / and that fails, so
+        // fall back somewhere writable rather than losing the diagnostics.
         f = fopen(EMERALD_LOG_PATH, "w");
+        if (f == NULL)
+        {
+            const char *home = getenv("HOME");
+            if (home != NULL)
+            {
+                char path[1024];
+                snprintf(path, sizeof(path), "%s/Library/Logs/" EMERALD_LOG_PATH, home);
+                f = fopen(path, "w");
+            }
+        }
     }
     if (f == NULL)
         return;

@@ -286,6 +286,15 @@ ifeq ($(DINFO),1)
 endif
 
 ifeq ($(PORTABLE),1)
+  # Pin the deployment target instead of inheriting whatever SDK is installed --
+  # a beta SDK stamps minos with its own version and the build then refuses to
+  # launch on anything older. 26.0 matches the floor of the Homebrew libSDL3
+  # that gets bundled into the .app; targeting lower achieves nothing until SDL
+  # itself is rebuilt against an older SDK. The native link reuses CFLAGS, so
+  # this covers both compile and link.
+  MACOS_MIN ?= 26.0
+  override CFLAGS += -mmacosx-version-min=$(MACOS_MIN)
+
   ifeq ($(DINFO),1)
     override CFLAGS += -O0
   else
