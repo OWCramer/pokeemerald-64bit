@@ -17,7 +17,7 @@ Android ports use is unavailable).
 | Boot + render | working — full intro sequence animates |
 | RTC | working — reads the host clock |
 | Audio | working — all 12 PCM + 4 CGB channels, band-limited PSG |
-| SDL3 target | working — `make native3`, renders byte-identically to SDL2 |
+| SDL3 target | working — `make native` |
 
 ## Building
 
@@ -27,7 +27,7 @@ make native DINFO=1    # -O0 -g, for debugging
 ./pokeemerald
 ```
 
-Requires Homebrew `sdl2` (or `sdl2-compat`), `libpng`, `pkg-config`. No ROM is
+Requires Homebrew `sdl3`, `libpng`, `pkg-config`. No ROM is
 needed: this decomp builds from checked-in assets.
 
 Useful knobs:
@@ -424,15 +424,10 @@ next time rather than last.
 
 ## The SDL3 target
 
-`make native3` builds `./pokeemerald-sdl3` against SDL3 from
-`src/platform/sdl3.c`. This was written for iOS directly rather than porting the
-SDL2 file twice; `src/platform/sdl2.c` stays as the reference desktop build and
-the two are selected by `TARGET_PLATFORM`, each file wholly inside its own
-`#ifdef` so the unused one compiles to an empty object.
-
-**They must not share an object directory.** The first build linked a stale
-`sdl2.o` from the SDL2 configuration and failed on removed SDL2 symbols
-(`SDL_AtomicGet`, `SDL_SemWait`), so `SDL3=1` selects `build/native-sdl3`.
+`make native` builds `./pokeemerald-sdl3` against SDL3 from
+`src/platform/sdl3.c`, which was written for iOS directly. The old SDL2 platform
+layer (`src/platform/sdl2.c`) and the 32-bit Windows layer (`win32.c`) have been
+removed along with their build paths; SDL3 is the only platform target.
 
 What SDL3 buys, all of it iOS-relevant:
 
@@ -470,7 +465,7 @@ PPU blitting one texture, and the RTC already reads the host clock.
 
 Remaining work, roughly in order:
 
-1. ~~Rewrite against SDL3~~ — done, `make native3`.
+1. ~~Rewrite against SDL3~~ — done, `make native`.
 2. ~~Touch controls~~ / ~~gamepad~~ / ~~background save flush~~ — done in
    `sdl3.c`, but the touch overlay has only been exercised on desktop; the
    layout needs tuning against a real thumb on a real phone.
