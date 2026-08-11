@@ -166,7 +166,15 @@ static inline u8 *ScriptRebase(u32 v)
     return (s32)v ? (u8 *)(uintptr_t)base + (s32)v : (u8 *)0;
 }
 #define SCRIPT_REBASE(v) ScriptRebase(v)
-#define T1_READ_PTR(ptr) SCRIPT_REBASE(T1_READ_32(ptr))
+// Self-relative pointer read: the 4-byte slot holds (target - slot), so the real
+// pointer is slot + offset. 0 is the NULL sentinel (a real pointer never targets
+// its own slot). Uniform on every 64-bit host -- no anchor.
+static inline u8 *T1ReadPtr(const u8 *ptr)
+{
+    u32 v = T1_READ_32(ptr);
+    return v ? (u8 *)ptr + (s32)v : (u8 *)0;
+}
+#define T1_READ_PTR(ptr) T1ReadPtr((const u8 *)(ptr))
 #else
 #define T1_READ_PTR(ptr) (u8 *) T1_READ_32(ptr)
 #endif
@@ -176,7 +184,12 @@ static inline u8 *ScriptRebase(u32 v)
 #define T2_READ_16(ptr) ((ptr)[0] + ((ptr)[1] << 8))
 #define T2_READ_32(ptr) ((ptr)[0] + ((ptr)[1] << 8) + ((ptr)[2] << 16) + ((ptr)[3] << 24))
 #ifdef NATIVE_BUILD
-#define T2_READ_PTR(ptr) ((void *)SCRIPT_REBASE(T2_READ_32(ptr)))
+static inline void *T2ReadPtr(const u8 *ptr)
+{
+    u32 v = T2_READ_32(ptr);
+    return v ? (void *)((u8 *)ptr + (s32)v) : (void *)0;
+}
+#define T2_READ_PTR(ptr) T2ReadPtr((const u8 *)(ptr))
 #else
 #define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
@@ -227,14 +240,13 @@ static inline void *PtrRebase32(u32 v)
 // pointer fits in 32 bits: a stored value is already the whole address and
 // needs no anchor. macOS/arm64 cannot do this -- PIE is mandatory there and
 // -image_base is ignored -- which is the only reason the offset scheme exists.
+// T1_READ_PTR / T2_READ_PTR are now self-relative and uniform (defined above);
+// PORTABLE_ELF no longer overrides them. SCRIPT_REBASE / PTR_REBASE32 remain
+// forked here until they are removed (see docs/POINTER_MIGRATION.md phases 5-6).
 #undef SCRIPT_REBASE
 #undef PTR_REBASE32
-#undef T1_READ_PTR
-#undef T2_READ_PTR
 #define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define PTR_REBASE32(v)  ((void *)(uintptr_t)(v))
-#define T1_READ_PTR(ptr) ((u8 *)(uintptr_t)T1_READ_32(ptr))
-#define T2_READ_PTR(ptr) ((void *)(uintptr_t)T2_READ_32(ptr))
 #endif
 
 #ifdef NATIVE_BUILD

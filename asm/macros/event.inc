@@ -905,11 +905,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -918,11 +914,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -932,11 +924,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -945,11 +933,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -958,11 +942,7 @@
 		.ifc \pointer3, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer3 /* event script*/
-		.else
-		.long (\pointer3 - _gScriptBase) /* event script*/
-		.endif
+		.long (\pointer3 - .) /* event script*/
 		.endif
 		.else
 		.int \pointer3 /* event script*/
@@ -972,11 +952,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -985,11 +961,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -998,11 +970,7 @@
 		.ifc \pointer3, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer3 /* event script*/
-		.else
-		.long (\pointer3 - _gScriptBase) /* event script*/
-		.endif
+		.long (\pointer3 - .) /* event script*/
 		.endif
 		.else
 		.int \pointer3 /* event script*/
@@ -1012,11 +980,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1026,11 +990,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1039,11 +999,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1052,11 +1008,7 @@
 		.ifc \pointer3, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer3 /* text*/
-		.else
-		.long (\pointer3 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer3 - .) /* text*/
 		.endif
 		.else
 		.int \pointer3 /* text*/
@@ -1066,11 +1018,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1079,11 +1027,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1093,11 +1037,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1106,11 +1046,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1119,11 +1055,7 @@
 		.ifc \pointer3, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer3 /* text*/
-		.else
-		.long (\pointer3 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer3 - .) /* text*/
 		.endif
 		.else
 		.int \pointer3 /* text*/
@@ -1132,11 +1064,7 @@
 		.ifc \pointer4, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer4 /* event script*/
-		.else
-		.long (\pointer4 - _gScriptBase) /* event script*/
-		.endif
+		.long (\pointer4 - .) /* event script*/
 		.endif
 		.else
 		.int \pointer4 /* event script*/
@@ -1146,11 +1074,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1159,11 +1083,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1172,11 +1092,7 @@
 		.ifc \pointer3, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer3 /* text*/
-		.else
-		.long (\pointer3 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer3 - .) /* text*/
 		.endif
 		.else
 		.int \pointer3 /* text*/
@@ -1186,11 +1102,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1199,11 +1111,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1212,11 +1120,7 @@
 		.ifc \pointer3, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer3 /* text*/
-		.else
-		.long (\pointer3 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer3 - .) /* text*/
 		.endif
 		.else
 		.int \pointer3 /* text*/
@@ -1225,11 +1129,7 @@
 		.ifc \pointer4, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer4 /* event script*/
-		.else
-		.long (\pointer4 - _gScriptBase) /* event script*/
-		.endif
+		.long (\pointer4 - .) /* event script*/
 		.endif
 		.else
 		.int \pointer4 /* event script*/
@@ -1239,11 +1139,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1252,11 +1148,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1266,11 +1158,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1279,11 +1167,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1293,11 +1177,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1306,11 +1186,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
@@ -1320,11 +1196,7 @@
 		.ifc \pointer1, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer1 /* text*/
-		.else
-		.long (\pointer1 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer1 - .) /* text*/
 		.endif
 		.else
 		.int \pointer1 /* text*/
@@ -1333,11 +1205,7 @@
 		.ifc \pointer2, NULL
 		.long 0
 		.else
-		.if ELF_BUILD
-		sptr \pointer2 /* text*/
-		.else
-		.long (\pointer2 - _gScriptBase) /* text*/
-		.endif
+		.long (\pointer2 - .) /* text*/
 		.endif
 		.else
 		.int \pointer2 /* text*/
