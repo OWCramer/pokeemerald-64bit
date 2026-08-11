@@ -162,6 +162,15 @@ int main(int argc, char **argv)
     ResolveSavePath();
     ReadSaveFile(sSavePath);
 
+    // Desktop metadata, set before SDL_Init so the video backend can use it.
+    // SDL uses the identifier as the Wayland xdg app_id (and the X11 WM class),
+    // which is how KDE and GNOME associate the window with its installed
+    // .desktop file and therefore its icon -- Wayland has no per-window pixel
+    // icon protocol, so this is the only way the taskbar/dock icon appears
+    // instead of the generic placeholder. The identifier MUST match the
+    // installed .desktop basename and its StartupWMClass (see tools/packaging).
+    SDL_SetAppMetadata("Pok\xC3\xA9mon Emerald", "1.0.0", "pokeemerald");
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD))
     {
         DBGPRINTF("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -177,7 +186,7 @@ int main(int argc, char **argv)
 #if MOBILE
     flags |= SDL_WINDOW_FULLSCREEN;
 #endif
-    sdlWindow = SDL_CreateWindow("pokeemerald",
+    sdlWindow = SDL_CreateWindow("Pok\xC3\xA9mon Emerald",
                                  DISPLAY_WIDTH * 3, DISPLAY_HEIGHT * 3, flags);
     if (sdlWindow == NULL)
     {

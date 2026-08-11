@@ -1,0 +1,24 @@
+# Maintainer: OWCramer
+#
+# Binary package: the game is built once by CI (or tools/make_pacman.sh) and
+# this PKGBUILD just installs the pre-built files staged next to it. It does
+# NOT bundle SDL3 -- it depends on the system `sdl3`, the idiomatic Arch way,
+# so the package stays small and tracks the user's own SDL3. The game binary
+# only needs glibc <= 2.34, so an Arch build still runs on the older glibc that
+# SteamOS ships.
+pkgname=pokeemerald
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Pokémon Emerald -- native 64-bit decompilation build"
+arch=('x86_64' 'aarch64')
+url="https://github.com/OWCramer/pokeemerald-64bit"
+license=('custom')
+depends=('sdl3')
+# The binary is already final; do not re-strip or try to split debug symbols.
+options=('!strip' '!debug')
+
+package() {
+    install -Dm755 "$startdir/pokeemerald"         "$pkgdir/usr/bin/pokeemerald"
+    install -Dm644 "$startdir/pokeemerald.desktop" "$pkgdir/usr/share/applications/pokeemerald.desktop"
+    install -Dm644 "$startdir/pokeemerald.png"     "$pkgdir/usr/share/icons/hicolor/256x256/apps/pokeemerald.png"
+}
