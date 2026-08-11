@@ -340,7 +340,12 @@ int main(int argc, char **argv)
 
             curGameTime = SDL_GetPerformanceCounter();
             double deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());
-            if (deltaTime > (dt * 5))
+            // Cap catch-up to avoid a spiral of death after a real stall (the app
+            // was backgrounded, a GC paused us). The cap is in REAL time and must
+            // NOT scale with timeScale: `dt * 5` collapses to one 60Hz frame
+            // (~16.6ms) under 5x fast-forward, so a vsync'd present landing a hair
+            // over budget clamped every frame and quietly forced FF back to 1x.
+            if (deltaTime > (fixedTimestep * 5))
                 deltaTime = dt;
             lastGameTime = curGameTime;
 
@@ -353,7 +358,6 @@ int main(int argc, char **argv)
                     VDraw(sdlTexture);
                     SDL_RenderClear(sdlRenderer);
                     SDL_RenderTexture(sdlRenderer, sdlTexture, NULL, NULL);
-                    DrawTouchOverlay();
                     didRender = TRUE;
                     SDL_SetAtomicInt(&isFrameAvailable, 0);
 
@@ -375,9 +379,17 @@ int main(int argc, char **argv)
         // Only present frames that were actually drawn. This loop spins faster
         // than the emulated 60Hz, and presenting on an iteration where nothing
         // was copied swaps in an undrawn back buffer -- a black flicker every
-        // few frames.
+        // few frames. Draw the touch overlay here, once per presented frame,
+        // rather than inside the emulation loop above: only the final sub-frame
+        // is ever shown, and the overlay toggles the renderer's logical
+        // presentation, so drawing it per sub-frame thrashed that state ~5x per
+        // frame under fast-forward -- stalling the main thread enough to glitch
+        // audio and drop the speed-up.
         if (didRender)
+        {
+            DrawTouchOverlay();
             SDL_RenderPresent(sdlRenderer);
+        }
         else
             SDL_Delay(1);
     }
