@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BIN="${1:-pokeemerald-sdl3}"
+BIN="${1:-pokeemerald64}"
 OUTDIR="${2:-dist}"
 PKGVER="${PKGVER:-1.0.0}"
 

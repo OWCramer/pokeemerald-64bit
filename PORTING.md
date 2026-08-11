@@ -424,7 +424,7 @@ next time rather than last.
 
 ## The SDL3 target
 
-`make native` builds `./pokeemerald-sdl3` against SDL3 from
+`make native` builds `./pokeemerald64` against SDL3 from
 `src/platform/sdl3.c`, which was written for iOS directly. The old SDL2 platform
 layer (`src/platform/sdl2.c`) and the 32-bit Windows layer (`win32.c`) have been
 removed along with their build paths; SDL3 is the only platform target.

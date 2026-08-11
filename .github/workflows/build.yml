@@ -210,10 +210,10 @@ jobs:
           chmod +x /usr/local/bin/appimagetool
 
       - name: Package AppImage
-        run: ./tools/make_appimage.sh pokeemerald-sdl3 dist/pokeemerald-${{ matrix.arch }}.AppImage
+        run: ./tools/make_appimage.sh pokeemerald64 dist/pokeemerald-${{ matrix.arch }}.AppImage
 
       - name: Package tarball
-        run: ./tools/make_tarball.sh pokeemerald-sdl3 dist/pokeemerald-linux-${{ matrix.arch }}.tar.gz ${{ matrix.arch }}
+        run: ./tools/make_tarball.sh pokeemerald64 dist/pokeemerald-linux-${{ matrix.arch }}.tar.gz ${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -259,7 +259,7 @@ jobs:
           chown -R builder:builder .
           PKGVER="${GITHUB_REF_NAME#v}"
           [ "$PKGVER" = "$GITHUB_REF_NAME" ] && PKGVER=1.0.0   # untagged build
-          sudo -u builder env PKGVER="$PKGVER" ./tools/make_pacman.sh pokeemerald-sdl3 dist
+          sudo -u builder env PKGVER="$PKGVER" ./tools/make_pacman.sh pokeemerald64 dist
 
       - uses: actions/upload-artifact@v4
         with:

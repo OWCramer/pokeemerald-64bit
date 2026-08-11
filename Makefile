@@ -183,8 +183,8 @@ else ifeq ($(ANDROID),1)
 ROM := $(ANDROID_JNILIBS)/libmain.so
 OBJ_DIR := $(BUILD_DIR)/android-$(ANDROID_ABI)
 else
-ROM := $(FILE_NAME)-sdl3
-OBJ_DIR := $(BUILD_DIR)/native-sdl3
+ROM := $(FILE_NAME)64
+OBJ_DIR := $(BUILD_DIR)/native64
 endif
 
 # Commonly used directories
@@ -424,7 +424,7 @@ clean-assets:
 tidy: tidyportable
 
 tidyportable:
-	rm -f $(FILE_NAME)-sdl3 $(FILE_NAME)-ios
+	rm -f $(FILE_NAME)64 $(FILE_NAME)-ios
 	rm -rf $(BUILD_DIR)
 
 clean-platform:
