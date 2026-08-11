@@ -344,21 +344,33 @@ jobs:
       - name: Build APK
         run: cd android && ./gradlew assembleRelease --console=plain
 
-      # Sign with an ephemeral key (CI holds no signing secret). The APK installs
-      # and runs; the trade-off is that each release's signature differs, so
-      # updating in place is blocked -- users uninstall the old one first. Point
-      # a real keystore at this step (a repo secret) to fix that.
+      # Sign with the release keystore held in repo secrets, so every build shares
+      # one signature and releases update in place (and keep their save). Pull
+      # requests from forks receive no secrets, so fall back to an ephemeral key
+      # there -- that APK still installs, it just cannot update an existing one.
       - name: Sign APK
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           BT="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)"
           UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
-          keytool -genkeypair -v -keystore ci.keystore -storepass android \
-            -keypass android -alias ci -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Pokemon Emerald"
+          if [ -n "$KS_B64" ]; then
+            printf '%s' "$KS_B64" | base64 -d > release.keystore
+          else
+            echo "::warning::No signing secret (fork PR); using an ephemeral key -- install-only, no in-place updates."
+            keytool -genkeypair -v -keystore release.keystore -storepass android \
+              -keypass android -alias ci -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Pokemon Emerald"
+            KS_PASS=android; KEY_ALIAS=ci; KEY_PASS=android
+          fi
           "${BT}zipalign" -f 4 "$UNSIGNED" aligned.apk
-          "${BT}apksigner" sign --ks ci.keystore --ks-pass pass:android \
-            --ks-key-alias ci --key-pass pass:android aligned.apk
+          "${BT}apksigner" sign --ks release.keystore --ks-pass "pass:$KS_PASS" \
+            --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" aligned.apk
           "${BT}apksigner" verify --print-certs aligned.apk | head -1
+          rm -f release.keystore
           mkdir -p dist && mv aligned.apk dist/pokeemerald-android.apk
 
       - uses: actions/upload-artifact@v4
