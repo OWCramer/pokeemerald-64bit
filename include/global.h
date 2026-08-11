@@ -222,6 +222,21 @@ static inline void *PtrRebase32(u32 v)
 #define PTR_REBASE32(v) ((void *)(uintptr_t)(v))
 #endif
 
+#ifdef PORTABLE_ELF
+// Linux links -no-pie, so the image sits at a low fixed address and every
+// pointer fits in 32 bits: a stored value is already the whole address and
+// needs no anchor. macOS/arm64 cannot do this -- PIE is mandatory there and
+// -image_base is ignored -- which is the only reason the offset scheme exists.
+#undef SCRIPT_REBASE
+#undef PTR_REBASE32
+#undef T1_READ_PTR
+#undef T2_READ_PTR
+#define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
+#define PTR_REBASE32(v)  ((void *)(uintptr_t)(v))
+#define T1_READ_PTR(ptr) ((u8 *)(uintptr_t)T1_READ_32(ptr))
+#define T2_READ_PTR(ptr) ((void *)(uintptr_t)T2_READ_32(ptr))
+#endif
+
 // Diagnostic log that survives a segfault; see src/platform/debug_log.c.
 void EmeraldLog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

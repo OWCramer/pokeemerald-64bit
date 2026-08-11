@@ -18,7 +18,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -32,7 +36,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -46,7 +54,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -60,7 +72,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -88,7 +104,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -102,7 +122,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -116,7 +140,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -130,7 +158,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -150,7 +182,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -164,7 +200,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -178,7 +218,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -192,7 +236,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -212,7 +260,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -226,7 +278,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -240,7 +296,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -254,7 +314,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -274,7 +338,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -288,7 +356,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -302,7 +374,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -316,7 +392,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -336,7 +416,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -350,7 +434,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -364,7 +452,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -378,7 +470,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -398,7 +494,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -412,7 +512,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -432,7 +536,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -446,7 +554,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -460,7 +572,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -474,7 +590,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -494,7 +614,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -508,7 +632,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -528,7 +656,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -542,7 +674,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -561,7 +697,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -592,7 +732,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -606,7 +750,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -620,7 +768,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -634,7 +786,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -654,7 +810,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -668,7 +828,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -682,7 +846,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -696,7 +864,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -716,7 +888,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -730,7 +906,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -744,7 +924,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -758,7 +942,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -777,7 +965,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -790,7 +982,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -809,7 +1005,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -822,7 +1022,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -841,7 +1045,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -854,7 +1062,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -876,7 +1088,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -891,7 +1107,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -906,7 +1126,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -921,7 +1145,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -945,7 +1173,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -960,7 +1192,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -976,7 +1212,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -991,7 +1231,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1020,7 +1264,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1034,7 +1282,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1050,7 +1302,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1064,7 +1320,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1078,7 +1338,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1099,7 +1363,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1113,7 +1381,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1127,7 +1399,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1141,7 +1417,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1162,7 +1442,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1176,7 +1460,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1190,7 +1478,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1204,7 +1496,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1228,7 +1524,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1244,7 +1544,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1260,7 +1564,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1276,7 +1584,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1300,7 +1612,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1316,7 +1632,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1332,7 +1652,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1348,7 +1672,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1372,7 +1700,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1388,7 +1720,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1435,7 +1771,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1450,7 +1790,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1465,7 +1809,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1480,7 +1828,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1495,7 +1847,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1510,7 +1866,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1525,7 +1885,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1540,7 +1904,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1555,7 +1923,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1569,7 +1941,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1582,7 +1958,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1595,7 +1975,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1616,7 +2000,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1629,7 +2017,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1649,7 +2041,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination
@@ -1663,7 +2059,11 @@
 	.ifc \destination, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \destination
+	.else
 	.long (\destination - _gScriptBase)
+	.endif
 	.endif
 	.else
 	.int \destination

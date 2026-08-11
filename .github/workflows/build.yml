@@ -43,10 +43,46 @@ jobs:
         with:
           files: pokeemerald-macos-arm64.zip
 
-  # Linux (AppImage) and Windows (.exe) are not buildable from this tree yet.
-  # The 64-bit path is Mach-O only -- tools/mach_o_symbols.py,
-  # gen_macho_aliases.sh and -Wl,-alias_list have no ELF or PE equivalent here
-  # -- and the sole alternative in the Makefile is a hardcoded 32-bit MinGW
-  # cross-compile against SDL2 inherited from upstream, which predates the
-  # 64-bit pointer work. Adding either means porting the build first, not
-  # adding a job here.
+  linux:
+    name: Linux (AppImage, x86_64)
+    runs-on: ubuntu-24.04
+    # 24.04 does not package libsdl3-dev; 25.04 does.
+    container: ubuntu:25.04
+    steps:
+      # Before checkout: the container has no git, and actions/checkout needs it.
+      - name: Install dependencies
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git ca-certificates curl file binutils zsync desktop-file-utils \
+            clang g++ make python3 pkg-config libpng-dev libsdl3-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make native -j"$(nproc)"
+
+      - name: Install appimagetool
+        run: |
+          curl -sSfL -o /usr/local/bin/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /usr/local/bin/appimagetool
+
+      - name: Package AppImage
+        run: ./tools/make_appimage.sh pokeemerald-sdl3 dist/pokeemerald-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeemerald-linux-x86_64
+          path: dist/pokeemerald-x86_64.AppImage
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pokeemerald-x86_64.AppImage
+
+  # Windows is still not buildable from this tree: the only path in the
+  # Makefile is a hardcoded 32-bit MinGW cross-compile against SDL2 inherited
+  # from upstream, predating the 64-bit pointer work.

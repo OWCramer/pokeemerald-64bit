@@ -34,6 +34,10 @@ import sys
 GLOBL_COMMENT = re.compile(
     r'^(\s*)([A-Za-z_][A-Za-z0-9_]*): ; \.global ([A-Za-z_][A-Za-z0-9_]*)\s*$')
 LABEL_DEF = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*):\s*(?:$|[^:])')
+# `name::` is GAS shorthand for a global label. LLVM's assembler defines the
+# symbol but leaves it local, which on Mach-O the link-time alias list papered
+# over; ELF has no such fallback, so the export has to be explicit.
+GLOBAL_LABEL_DEF = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)::\s*$')
 # `.equ name, value` also defines a name (song files alias voicegroups this way).
 SET_DEF = re.compile(r'^\s*\.(?:set|equ|equiv)\s+([A-Za-z_][A-Za-z0-9_]*)')
 GLOBL_DIR = re.compile(r'^\s*\.glob(?:a)?l\s+([A-Za-z_][A-Za-z0-9_]*)\s*$')
@@ -116,6 +120,9 @@ def main():
         m = GLOBL_COMMENT.match(line)
         if m:
             defined.add(m.group(2)); continue
+        m = GLOBAL_LABEL_DEF.match(line)
+        if m:
+            defined.add(m.group(1)); continue
         m = LABEL_DEF.match(line)
         if m:
             defined.add(m.group(1)); continue
@@ -157,9 +164,16 @@ def main():
         return False
 
     def emit_alias(name):
-        if elf or name in aliased:
+        if name in aliased:
             return
         aliased.add(name)
+        if elf:
+            # No underscore convention on ELF, so there is nothing to alias --
+            # but the export still has to happen. On Mach-O the '_name' alias
+            # was what made these visible across objects; without an equivalent
+            # here every label would be defined and none exported.
+            out.append('\t.globl %s\n' % name)
+            return
         out.append('\t.globl _%s\n' % name)
         out.append('\t_%s = %s\n' % (name, name))
 
@@ -175,7 +189,11 @@ def main():
             # the '_L...' alias can be -- and keeping the bare definition means
             # macro-constructed references like \name\()_Blockdata still
             # resolve, which no text filter could rewrite.
-            if not is_local_prefixed(label):
+            # Mach-O cannot export an 'L'-prefixed symbol -- the '_L' alias
+            # carries it instead. ELF has no such rule (only '.L' is local), and
+            # with aliasing disabled these would be defined but never exported,
+            # so export them directly.
+            if elf or not is_local_prefixed(label):
                 out.append('\t.globl %s\n' % label)
             out.append('%s%s:\n' % (indent, label))
             emit_alias(label)
@@ -215,6 +233,14 @@ def main():
                 out.append('\t.balign 8\n')
             out.append(m.group(1) + outside_strings(m.group(2), ptr_sub) + m.group(3) + '\n')
             prev_was_byte = False
+            continue
+
+        m = GLOBAL_LABEL_DEF.match(line) if elf else None
+        if m:
+            if not tail_is_label_group():
+                block_start, block_aligned = len(out), False
+            out.append('\t.globl %s\n' % m.group(1))
+            out.append(line if line.endswith('\n') else line + '\n')
             continue
 
         m = LABEL_DEF.match(line)

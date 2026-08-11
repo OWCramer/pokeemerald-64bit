@@ -28,7 +28,11 @@
 	.ifc \sym, NULL
 	.long 0
 	.else
+	.if ELF_BUILD
+	.long \sym
+	.else
 	.long (\sym - _gScriptBase)
+	.endif
 	.endif
 	.endif
 	.endif

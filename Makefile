@@ -103,6 +103,11 @@ endif
   # concerns and apply to any object format. Retargeting sections at Mach-O,
   # and the leading underscore on gScriptBase, are not -- so the pipeline
   # forks here.
+  ELF_BUILD := 0
+  ifneq ($(shell uname -s),Darwin)
+    ELF_BUILD := 1
+    CPPFLAGS += -D PORTABLE_ELF
+  endif
   ifeq ($(shell uname -s),Darwin)
   ASM_PSEUDO_OP_CONV := sed \
 	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - _gScriptBase)/' \
@@ -118,7 +123,7 @@ endif
   else
   # ELF keeps its own section names, and C symbols carry no underscore.
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - gScriptBase)/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long \1/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -133,7 +138,7 @@ endif
   # undefined symbol to itself. GNU as folds X-X to 0; clang requires an
   # absolute. Give them their charmap byte pairs as values -- distinct, and
   # above the 0..255 range the macro's .else branch emits directly.
-  ASM_DEFSYMS := printf '\t.set PORTABLE_ASM, 1\n\t.set PORTABLE, 1\n\t.set MODERN, 1\n\t.set UBFIX, 1\n\t.set STR_VAR_1, 0xFD02\n\t.set STR_VAR_2, 0xFD03\n\t.set STR_VAR_3, 0xFD04\n';
+  ASM_DEFSYMS := printf '\t.set PORTABLE_ASM, 1\n\t.set PORTABLE, 1\n\t.set MODERN, 1\n\t.set UBFIX, 1\n\t.set ELF_BUILD, $(ELF_BUILD)\n\t.set STR_VAR_1, 0xFD02\n\t.set STR_VAR_2, 0xFD03\n\t.set STR_VAR_3, 0xFD04\n';
   FIX_UNDERSCORE := true
   PLATFORM_INCLUDES :=
   # clang's integrated assembler replaces GNU as.
@@ -636,7 +641,7 @@ else
 # No alias list: on ELF the bare names the assembly uses are the names C
 # produces, so there is nothing to map.
 $(ROM): $(OBJS)
-	$(MODERNCC) $(CFLAGS) $^ $(SDL_LDFLAGS) -lm -o $@
+	$(MODERNCC) $(CFLAGS) -no-pie $^ $(SDL_LDFLAGS) -lm -o $@
 endif
 else
 $(ROM): $(OBJS)
