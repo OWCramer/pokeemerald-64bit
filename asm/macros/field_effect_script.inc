@@ -7,7 +7,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \address
+	sptr \address
 	.else
 	.long (\address - _gScriptBase)
 	.endif
@@ -24,7 +24,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \address
+	sptr \address
 	.else
 	.long (\address - _gScriptBase)
 	.endif
@@ -41,7 +41,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \address
+	sptr \address
 	.else
 	.long (\address - _gScriptBase)
 	.endif
@@ -58,7 +58,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \address
+	sptr \address
 	.else
 	.long (\address - _gScriptBase)
 	.endif
@@ -79,7 +79,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \tiles_address
+	sptr \tiles_address
 	.else
 	.long (\tiles_address - _gScriptBase)
 	.endif
@@ -92,7 +92,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \palette_address
+	sptr \palette_address
 	.else
 	.long (\palette_address - _gScriptBase)
 	.endif
@@ -105,7 +105,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \function_address
+	sptr \function_address
 	.else
 	.long (\function_address - _gScriptBase)
 	.endif
@@ -122,7 +122,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \tiles_address
+	sptr \tiles_address
 	.else
 	.long (\tiles_address - _gScriptBase)
 	.endif
@@ -135,7 +135,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \function_address
+	sptr \function_address
 	.else
 	.long (\function_address - _gScriptBase)
 	.endif
@@ -152,7 +152,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \palette_address
+	sptr \palette_address
 	.else
 	.long (\palette_address - _gScriptBase)
 	.endif
@@ -165,7 +165,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \function_address
+	sptr \function_address
 	.else
 	.long (\function_address - _gScriptBase)
 	.endif

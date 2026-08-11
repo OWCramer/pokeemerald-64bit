@@ -6,7 +6,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -24,7 +24,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -42,7 +42,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -60,7 +60,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -84,7 +84,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -103,7 +103,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -122,7 +122,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -141,7 +141,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -160,7 +160,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -179,7 +179,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -198,7 +198,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -217,7 +217,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -236,7 +236,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -255,7 +255,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -274,7 +274,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -293,7 +293,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -311,7 +311,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -329,7 +329,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -347,7 +347,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -365,7 +365,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -382,7 +382,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -395,7 +395,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -412,7 +412,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -425,7 +425,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -442,7 +442,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -455,7 +455,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -472,7 +472,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -485,7 +485,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -503,7 +503,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -521,7 +521,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -538,7 +538,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -551,7 +551,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -568,7 +568,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -581,7 +581,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -598,7 +598,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -611,7 +611,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -628,7 +628,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -641,7 +641,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -658,7 +658,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -675,7 +675,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -715,7 +715,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -733,7 +733,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -751,7 +751,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -769,7 +769,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -817,7 +817,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -844,7 +844,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -863,7 +863,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -885,7 +885,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -903,7 +903,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -923,7 +923,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param3
+	sptr \param3
 	.else
 	.long (\param3 - _gScriptBase)
 	.endif
@@ -943,7 +943,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param3
+	sptr \param3
 	.else
 	.long (\param3 - _gScriptBase)
 	.endif
@@ -963,7 +963,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param3
+	sptr \param3
 	.else
 	.long (\param3 - _gScriptBase)
 	.endif
@@ -983,7 +983,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param3
+	sptr \param3
 	.else
 	.long (\param3 - _gScriptBase)
 	.endif
@@ -1000,7 +1000,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1017,7 +1017,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1036,7 +1036,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -1055,7 +1055,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -1074,7 +1074,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -1093,7 +1093,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -1112,7 +1112,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif
@@ -1130,7 +1130,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -1151,7 +1151,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1242,7 +1242,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1259,7 +1259,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1281,7 +1281,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -1298,7 +1298,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1315,7 +1315,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1332,7 +1332,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param0
+	sptr \param0
 	.else
 	.long (\param0 - _gScriptBase)
 	.endif
@@ -1362,7 +1362,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param1
+	sptr \param1
 	.else
 	.long (\param1 - _gScriptBase)
 	.endif
@@ -1381,7 +1381,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \param2
+	sptr \param2
 	.else
 	.long (\param2 - _gScriptBase)
 	.endif

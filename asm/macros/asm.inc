@@ -29,7 +29,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \sym
+	sptr \sym
 	.else
 	.long (\sym - _gScriptBase)
 	.endif

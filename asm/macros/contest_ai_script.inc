@@ -19,7 +19,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -37,7 +37,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -55,7 +55,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -73,7 +73,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -105,7 +105,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -123,7 +123,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -141,7 +141,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -159,7 +159,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -183,7 +183,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -201,7 +201,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -219,7 +219,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -237,7 +237,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -261,7 +261,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -279,7 +279,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -297,7 +297,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -315,7 +315,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -339,7 +339,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -357,7 +357,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -375,7 +375,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -393,7 +393,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -417,7 +417,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -435,7 +435,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -453,7 +453,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -471,7 +471,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -495,7 +495,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -513,7 +513,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -537,7 +537,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -555,7 +555,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -573,7 +573,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -591,7 +591,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -615,7 +615,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -633,7 +633,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -657,7 +657,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -675,7 +675,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -698,7 +698,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -733,7 +733,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -751,7 +751,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -769,7 +769,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -787,7 +787,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -811,7 +811,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -829,7 +829,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -847,7 +847,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -865,7 +865,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -889,7 +889,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -907,7 +907,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -925,7 +925,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -943,7 +943,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -966,7 +966,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -983,7 +983,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1006,7 +1006,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1023,7 +1023,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1046,7 +1046,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1063,7 +1063,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1089,7 +1089,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1108,7 +1108,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1127,7 +1127,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1146,7 +1146,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1174,7 +1174,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1193,7 +1193,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1213,7 +1213,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1232,7 +1232,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1265,7 +1265,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1283,7 +1283,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1303,7 +1303,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1321,7 +1321,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1339,7 +1339,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1364,7 +1364,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1382,7 +1382,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1400,7 +1400,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1418,7 +1418,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1443,7 +1443,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1461,7 +1461,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1479,7 +1479,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1497,7 +1497,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1525,7 +1525,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1545,7 +1545,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1565,7 +1565,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1585,7 +1585,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1613,7 +1613,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1633,7 +1633,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1653,7 +1653,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1673,7 +1673,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1701,7 +1701,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1721,7 +1721,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1772,7 +1772,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1791,7 +1791,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1810,7 +1810,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1829,7 +1829,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1848,7 +1848,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1867,7 +1867,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1886,7 +1886,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1905,7 +1905,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1924,7 +1924,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1942,7 +1942,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1959,7 +1959,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -1976,7 +1976,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -2001,7 +2001,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -2018,7 +2018,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -2042,7 +2042,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif
@@ -2060,7 +2060,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \destination
+	sptr \destination
 	.else
 	.long (\destination - _gScriptBase)
 	.endif

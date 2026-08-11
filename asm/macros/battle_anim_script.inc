@@ -17,7 +17,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \template
+	sptr \template
 	.else
 	.long (\template - _gScriptBase)
 	.endif
@@ -47,7 +47,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \addr
+	sptr \addr
 	.else
 	.long (\addr - _gScriptBase)
 	.endif
@@ -116,7 +116,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr
+	sptr \ptr
 	.else
 	.long (\ptr - _gScriptBase)
 	.endif
@@ -143,7 +143,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr1
+	sptr \ptr1
 	.else
 	.long (\ptr1 - _gScriptBase)
 	.endif
@@ -156,7 +156,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr2
+	sptr \ptr2
 	.else
 	.long (\ptr2 - _gScriptBase)
 	.endif
@@ -174,7 +174,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr
+	sptr \ptr
 	.else
 	.long (\ptr - _gScriptBase)
 	.endif
@@ -191,7 +191,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr
+	sptr \ptr
 	.else
 	.long (\ptr - _gScriptBase)
 	.endif
@@ -270,7 +270,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \addr
+	sptr \addr
 	.else
 	.long (\addr - _gScriptBase)
 	.endif
@@ -299,7 +299,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr
+	sptr \ptr
 	.else
 	.long (\ptr - _gScriptBase)
 	.endif
@@ -326,7 +326,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \ptr
+	sptr \ptr
 	.else
 	.long (\ptr - _gScriptBase)
 	.endif

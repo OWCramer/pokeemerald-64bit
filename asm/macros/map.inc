@@ -21,7 +21,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \script
+	sptr \script
 	.else
 	.long (\script - _gScriptBase)
 	.endif
@@ -42,7 +42,7 @@
 	.long 0
 	.else
 	.if ELF_BUILD
-	.long \script
+	sptr \script
 	.else
 	.long (\script - _gScriptBase)
 	.endif

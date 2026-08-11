@@ -38,6 +38,33 @@ ifeq ($(IOS),1)
   # part of the build and silently lands on the host target otherwise.
   IOS_TARGET_FLAGS := -target $(IOS_TRIPLE) -isysroot $(IOS_SYSROOT)
 endif
+# Android is ELF/arm64 or x86_64 with mandatory PIE, so it reuses the NATIVE64
+# anchor-offset pointer scheme (NOT the Linux -no-pie absolute one). It differs
+# from iOS only in object format: ELF has no Mach-O SUBTRACTOR relocation to
+# emit the 4-byte "target - gScriptBase" script-pointer offsets, so those are
+# emitted as absolute (like the Linux build) and rewritten to offsets after the
+# link by tools/elf_script_rebase.py. Everything else -- the .quad widening for
+# 8-byte pointers, the read-time rebasing in global.h -- is shared with iOS/macOS.
+ifneq (,$(filter android,$(MAKECMDGOALS)))
+  NATIVE64 := 1
+  ANDROID := 1
+  SDL3 := 1
+endif
+ANDROID ?= 0
+ifeq ($(ANDROID),1)
+  ANDROID_ABI  ?= x86_64
+  ANDROID_API  ?= 21
+  ANDROID_NDK  ?= $(HOME)/Android/Sdk/ndk/30.0.15729638
+  NDK_BIN      := $(ANDROID_NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin
+  ifeq ($(ANDROID_ABI),arm64-v8a)
+    ANDROID_TRIPLE := aarch64-linux-android
+  else
+    ANDROID_TRIPLE := $(ANDROID_ABI)-linux-android
+  endif
+  ANDROID_CC   := $(NDK_BIN)/$(ANDROID_TRIPLE)$(ANDROID_API)-clang
+  ANDROID_SDL  ?= build-android/SDL
+  ANDROID_JNILIBS := android/app/src/main/jniLibs/$(ANDROID_ABI)
+endif
 ifeq ($(NATIVE64),1)
   PORTABLE := 1
 endif
@@ -130,6 +157,10 @@ ifeq ($(SDL3),1)
         -Wl,-framework,CoreGraphics -Wl,-framework,CoreMotion -Wl,-framework,Foundation \
         -Wl,-framework,GameController -Wl,-framework,Metal -Wl,-framework,OpenGLES \
         -Wl,-framework,QuartzCore -Wl,-framework,UIKit -Wl,-weak_framework,CoreHaptics
+  else ifeq ($(ANDROID),1)
+  # SDL3 built for Android by tools/build (see android/build/SDL/b-<abi>).
+  SDL_CFLAGS := -I$(ANDROID_SDL)/include
+  SDL_LDFLAGS := -L$(ANDROID_SDL)/b-$(ANDROID_ABI) -lSDL3
   else
   SDL_CFLAGS := $(shell pkg-config --cflags sdl3)
   SDL_LDFLAGS := $(shell pkg-config --libs sdl3)
@@ -159,6 +190,25 @@ endif
 	-e '/^[[:space:]]*\.size[[:space:]]/d' \
 	-e 's/^\([[:space:]]*\)\.align[[:space:]]\{1,\}2[[:space:]]*$$/\1.balign 8/'
   MACHO_SYMS := | python3 tools/mach_o_symbols.py
+  else ifeq ($(ANDROID),1)
+  # Android is PIE ELF. 8-byte pointers relocate normally, but 4-byte script
+  # pointers can be neither absolute (no R_*_32 in a .so) nor a link-time
+  # symbol-difference (ELF has no SUBTRACTOR). Each is routed through the `sptr`
+  # macro (defined in ASM_DEFSYMS below): it stores a PC-relative offset -- which
+  # folds to a constant under -Bsymbolic with no dynamic relocation -- and records
+  # the slot address in the .emerald_sptr table. tools/elf_script_rebase.py then
+  # rewrites every recorded slot from PC-relative to gScriptBase-relative after
+  # the link, so the read-time macros in global.h reconstruct the PIE address.
+  ASM_PSEUDO_OP_CONV := sed \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\tsptr \1/' \
+	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
+	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
+	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
+	-e 's/\.section \.rodata/.section .data.rel.ro/' \
+	-e 's/[[:space:]][[:space:]]*@[^"]*$$//;s/^@.*//' \
+	-e '/^[[:space:]]*\.size[[:space:]]/d' \
+	-e 's/^\([[:space:]]*\)\.align[[:space:]]\{1,\}2[[:space:]]*$$/\1.balign 8/'
+  MACHO_SYMS := | python3 tools/mach_o_symbols.py --elf
   else
   # ELF keeps its own section names, and C symbols carry no underscore.
   ASM_PSEUDO_OP_CONV := sed \
@@ -178,6 +228,20 @@ endif
   # absolute. Give them their charmap byte pairs as values -- distinct, and
   # above the 0..255 range the macro's .else branch emits directly.
   ASM_DEFSYMS := printf '\t.set PORTABLE_ASM, 1\n\t.set PORTABLE, 1\n\t.set MODERN, 1\n\t.set UBFIX, 1\n\t.set ELF_BUILD, $(ELF_BUILD)\n\t.set STR_VAR_1, 0xFD02\n\t.set STR_VAR_2, 0xFD03\n\t.set STR_VAR_3, 0xFD04\n';
+  # sptr: how a 4-byte script pointer to a symbol is emitted on the ELF builds.
+  # The asm macros' `.if ELF_BUILD` branch and the data-script sed both route
+  # through it (macOS uses the `.else`/SUBTRACTOR branch and never calls sptr).
+  #   Linux (-no-pie): a plain absolute .long, exactly as before.
+  #   Android (PIE):   a PC-relative offset at the slot (labelled 999) plus the
+  #                    slot address recorded in .emerald_sptr for the post-link
+  #                    patcher. Spaces, not tabs, so \t is the macro arg.
+  ifeq ($(ELF_BUILD),1)
+    ifeq ($(ANDROID),1)
+      ASM_DEFSYMS := $(ASM_DEFSYMS) printf '.macro sptr t\n999: .long \\t - 999b\n .pushsection .emerald_sptr,"aw"\n .quad 999b\n .popsection\n.endm\n';
+    else
+      ASM_DEFSYMS := $(ASM_DEFSYMS) printf '.macro sptr t\n .long \\t\n.endm\n';
+    endif
+  endif
   FIX_UNDERSCORE := true
   PLATFORM_INCLUDES :=
   # clang's integrated assembler replaces GNU as.
@@ -219,6 +283,13 @@ endif
 # don't come with it
 ifeq ($(NATIVE64),1)
   CPP := clang -E
+  # Cross-compiling: the preprocess stage must be the NDK compiler too, or
+  # __ANDROID__/SDL_PLATFORM_ANDROID are undefined while CC1 defines them --
+  # SDL_main.h would then skip renaming main() to the exported SDL_main() that
+  # SDLActivity dlsym's, and any other Android #ifdef would be mis-evaluated.
+  ifeq ($(ANDROID),1)
+    CPP := $(ANDROID_CC) -E
+  endif
 else ifneq ($(MODERN),1)
   ifeq ($(shell uname -s),Darwin)
     CPP := $(PREFIX)cpp
@@ -242,6 +313,11 @@ ifeq ($(SDL3),1)
 ifeq ($(IOS),1)
 PORTABLE_ROM_NAME := $(FILE_NAME)-ios
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/ios
+else ifeq ($(ANDROID),1)
+# Output straight into the per-ABI jniLibs dir so x86_64 and arm64-v8a do not
+# share one output path (which would make the second ABI look up-to-date).
+PORTABLE_ROM_NAME := $(ANDROID_JNILIBS)/libmain.so
+PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/android-$(ANDROID_ABI)
 else
 PORTABLE_ROM_NAME := $(FILE_NAME)-sdl3
 PORTABLE_OBJ_DIR_NAME := $(BUILD_DIR)/native-sdl3
@@ -301,6 +377,12 @@ else ifeq ($(PORTABLE),1)
 else
   ASFLAGS := -mcpu=arm7tdmi --defsym MODERN=$(MODERN)
 endif
+# Android assembles the data scripts with the NDK clang for the target ABI; the
+# wrapper supplies the triple/sysroot, so drop the macOS-only -arch flag.
+ifeq ($(ANDROID),1)
+  AS := $(ANDROID_CC)
+  ASFLAGS := -x assembler -c -Xclang -asm-macro-max-nesting-depth=200 -fPIC
+endif
 
 INCLUDE_DIRS := include
 INCLUDE_CPP_ARGS := $(INCLUDE_DIRS:%=-iquote %)
@@ -321,15 +403,29 @@ else ifeq ($(NATIVE64),1)
   # the line above, after the reset). Re-add it here so the ELF pointer path in
   # global.h and the Linux CpuSet path in bios.c actually compile in. ELF_BUILD
   # is a make variable, so it is unaffected by the CPPFLAGS reset.
+  # Android is ELF but PIE, so it must NOT take the -no-pie absolute-pointer
+  # path -- it uses the anchor-offset read macros (the macOS/iOS default) plus
+  # the post-link patcher. Every other ELF host (Linux) keeps PORTABLE_ELF.
   ifeq ($(ELF_BUILD),1)
+  ifneq ($(ANDROID),1)
     CPPFLAGS += -D PORTABLE_ELF
+  endif
   endif
   MODERNCC := clang
   PATH_MODERNCC := $(MODERNCC)
   # clang compiles the preprocessed C directly; there is no cc1/as split.
   CC1 := clang
+  # The Android NDK clang wrapper bakes in --target/--sysroot for the ABI.
+  ifeq ($(ANDROID),1)
+    MODERNCC := $(ANDROID_CC)
+    PATH_MODERNCC := $(ANDROID_CC)
+    CC1 := $(ANDROID_CC)
+  endif
   override CFLAGS += -Wno-trigraphs -Wparentheses -std=gnu99 -fno-builtin -Wno-unused-function \
                      -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN) $(SDL_CFLAGS)
+  ifeq ($(ANDROID),1)
+    override CFLAGS += -fPIC
+  endif
   LIB :=
 else ifeq ($(PORTABLE),1)
   CPPFLAGS += -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D UBFIX -I$(SDL_DIR)/include -L$(SDL_DIR)/lib
@@ -519,6 +615,7 @@ gba: all
 native: all
 
 ios: all
+android: all
 native3: all
 
 # Other rules
@@ -713,6 +810,17 @@ ifeq ($(shell uname -s),Darwin)
 $(ROM): $(OBJS)
 	@bash tools/gen_macho_aliases.sh $(OBJ_DIR)/macho_aliases.txt $^
 	$(MODERNCC) $(CFLAGS) $^ $(SDL_LDFLAGS) -Wl,-alias_list,$(OBJ_DIR)/macho_aliases.txt -o $@
+else ifeq ($(ANDROID),1)
+# Android: link the game as libmain.so (SDLActivity dlopen's it). -z notext
+# allows the 4-byte absolute script-pointer relocations to survive the link;
+# elf_script_rebase.py then rewrites those slots to gScriptBase-relative offsets
+# and strips their dynamic relocations, so the read-time rebasing in global.h
+# reconstructs the correct PIE address. Stage both libs into jniLibs for Gradle.
+$(ROM): $(OBJS)
+	@mkdir -p $(ANDROID_JNILIBS)
+	$(ANDROID_CC) $(CFLAGS) -shared -fPIC $^ $(SDL_LDFLAGS) -Wl,-Bsymbolic -o $@
+	python3 tools/elf_script_rebase.py $@
+	cp -f $(ANDROID_SDL)/b-$(ANDROID_ABI)/libSDL3.so $(ANDROID_JNILIBS)/libSDL3.so
 else
 # No alias list: on ELF the bare names the assembly uses are the names C
 # produces, so there is nothing to map.

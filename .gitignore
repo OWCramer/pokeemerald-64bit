@@ -62,3 +62,11 @@ build/native-sdl3/
 *.wav
 *.ppm
 emerald_debug.log
+
+# Android: Gradle outputs, staged native libs, vendored SDL, and machine paths
+/android/build/
+/android/app/build/
+/android/.gradle/
+/android/app/src/main/jniLibs/
+/android/local.properties
+# build-android/ (vendored SDL source + per-abi builds) is covered by /build-*/
