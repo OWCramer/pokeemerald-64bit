@@ -7377,24 +7377,11 @@ static void UpdateObjectEventOffscreen(struct ObjectEvent *objectEvent, struct S
     // at the vanilla bounds is what made NPCs pop in at the edge of the old
     // 240x160 area however far the viewport reached.
     //
-    // Only for objects belonging to the map the player is on. An object that
-    // survived a connection transition keeps the sprite position it had on its
-    // own map -- sprite->x is only re-derived from map coordinates on an
-    // explicit teleport, never on a camera transition -- so showing it beyond
-    // the vanilla view draws it in the wrong place. Vanilla never had to get
-    // that right because everything out there was hidden.
-    {
-        bool32 ownMap = (objectEvent->mapNum == gSaveBlock1Ptr->location.mapNum
-                      && objectEvent->mapGroup == gSaveBlock1Ptr->location.mapGroup);
-        s16 padX = ownMap ? gRenderOffsetX : 0;
-        s16 padY = ownMap ? gRenderOffsetY : 0;
+    if ((s16)x >= DISPLAY_WIDTH + 16 + gRenderOffsetX || (s16)x2 < -16 - gRenderOffsetX)
+        objectEvent->offScreen = TRUE;
 
-        if ((s16)x >= DISPLAY_WIDTH + 16 + padX || (s16)x2 < -16 - padX)
-            objectEvent->offScreen = TRUE;
-
-        if ((s16)y >= DISPLAY_HEIGHT + 16 + padY || (s16)y2 < -16 - padY)
-            objectEvent->offScreen = TRUE;
-    }
+    if ((s16)y >= DISPLAY_HEIGHT + 16 + gRenderOffsetY || (s16)y2 < -16 - gRenderOffsetY)
+        objectEvent->offScreen = TRUE;
 }
 
 static void UpdateObjectEventSpriteVisibility(struct ObjectEvent *objectEvent, struct Sprite *sprite)
@@ -8710,6 +8697,12 @@ void SetVirtualObjectSpriteAnim(u8 virtualObjId, u8 animNum)
     }
 }
 
+// These animations slide a sprite off the top of the screen and stop when it
+// has travelled a full screen height. The expanded viewport shows further than
+// that, so the distance has to clear the render area or the sprite just parks
+// in view. Rounded to the 8px step the animations use.
+#define OFFSCREEN_RISE ((DISPLAY_HEIGHT + gRenderOffsetY + 7) & ~7)
+
 static void MoveUnionRoomObjectUp(struct Sprite *sprite)
 {
     switch(sprite->sAnimState)
@@ -8719,7 +8712,7 @@ static void MoveUnionRoomObjectUp(struct Sprite *sprite)
         sprite->sAnimState++;
     case 1:
         sprite->y2 -= 8;
-        if (sprite->y2 == -DISPLAY_HEIGHT)
+        if (sprite->y2 <= -OFFSCREEN_RISE)
         {
             sprite->y2 = 0;
             sprite->sInvisible = TRUE;
@@ -8734,7 +8727,7 @@ static void MoveUnionRoomObjectDown(struct Sprite *sprite)
     switch(sprite->sAnimState)
     {
     case 0:
-        sprite->y2 = -DISPLAY_HEIGHT;
+        sprite->y2 = -OFFSCREEN_RISE;
         sprite->sAnimState++;
     case 1:
         sprite->y2 += 8;
@@ -8971,14 +8964,14 @@ u8 MovementAction_FlyUp_Step1(struct ObjectEvent *objectEvent, struct Sprite *sp
 {
     sprite->y2 -= 8;
 
-    if(sprite->y2 == -DISPLAY_HEIGHT)
+    if(sprite->y2 <= -OFFSCREEN_RISE)
         sprite->sActionFuncId++;
     return FALSE;
 }
 
 u8 MovementAction_FlyDown_Step0(struct ObjectEvent *objectEvent, struct Sprite *sprite)
 {
-    sprite->y2 = -DISPLAY_HEIGHT;
+    sprite->y2 = -OFFSCREEN_RISE;
     sprite->sActionFuncId++;
     return FALSE;
 }
