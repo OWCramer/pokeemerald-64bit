@@ -6,11 +6,7 @@
 	.ifc \address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \address
-	.else
-	.long (\address - _gScriptBase)
-	.endif
+	.long (\address - .)
 	.endif
 	.else
 	.int \address
@@ -23,11 +19,7 @@
 	.ifc \address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \address
-	.else
-	.long (\address - _gScriptBase)
-	.endif
+	.long (\address - .)
 	.endif
 	.else
 	.int \address
@@ -40,11 +32,7 @@
 	.ifc \address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \address
-	.else
-	.long (\address - _gScriptBase)
-	.endif
+	.long (\address - .)
 	.endif
 	.else
 	.int \address
@@ -57,11 +45,7 @@
 	.ifc \address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \address
-	.else
-	.long (\address - _gScriptBase)
-	.endif
+	.long (\address - .)
 	.endif
 	.else
 	.int \address
@@ -78,11 +62,7 @@
 	.ifc \tiles_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \tiles_address
-	.else
-	.long (\tiles_address - _gScriptBase)
-	.endif
+	.long (\tiles_address - .)
 	.endif
 	.else
 	.int \tiles_address
@@ -91,11 +71,7 @@
 	.ifc \palette_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \palette_address
-	.else
-	.long (\palette_address - _gScriptBase)
-	.endif
+	.long (\palette_address - .)
 	.endif
 	.else
 	.int \palette_address
@@ -104,11 +80,7 @@
 	.ifc \function_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \function_address
-	.else
-	.long (\function_address - _gScriptBase)
-	.endif
+	.long (\function_address - .)
 	.endif
 	.else
 	.int \function_address
@@ -121,11 +93,7 @@
 	.ifc \tiles_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \tiles_address
-	.else
-	.long (\tiles_address - _gScriptBase)
-	.endif
+	.long (\tiles_address - .)
 	.endif
 	.else
 	.int \tiles_address
@@ -134,11 +102,7 @@
 	.ifc \function_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \function_address
-	.else
-	.long (\function_address - _gScriptBase)
-	.endif
+	.long (\function_address - .)
 	.endif
 	.else
 	.int \function_address
@@ -151,11 +115,7 @@
 	.ifc \palette_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \palette_address
-	.else
-	.long (\palette_address - _gScriptBase)
-	.endif
+	.long (\palette_address - .)
 	.endif
 	.else
 	.int \palette_address
@@ -164,11 +124,7 @@
 	.ifc \function_address, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \function_address
-	.else
-	.long (\function_address - _gScriptBase)
-	.endif
+	.long (\function_address - .)
 	.endif
 	.else
 	.int \function_address

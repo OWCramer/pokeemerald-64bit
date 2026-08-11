@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BIN="${1:-pokeemerald-sdl3}"
+BIN="${1:-pokeemerald64}"
 ARCH="${3:-$(uname -m)}"
 OUT="${2:-dist/pokeemerald-linux-$ARCH.tar.gz}"
 NAME="pokeemerald-linux-$ARCH"

@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="pokeemerald"
-BIN="pokeemerald-sdl3"
+BIN="pokeemerald64"
 SDL_LIB="$(otool -L "$BIN" | awk '/libSDL3/ {print $1; exit}')"
 DEST="dist/${APP_NAME}.app"
 

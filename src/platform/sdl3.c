@@ -1149,7 +1149,7 @@ static void ResolveSavePath(void)
     // every save, so bindings silently never persisted. Both paths now fall
     // through to the same tail.
     bool8 useLocal = FALSE;
-    char *pref = SDL_GetPrefPath("pokeemerald", "pokeemerald-ios");
+    char *pref = SDL_GetPrefPath("pokeemerald", "pokeemerald64");
 
 #if !MOBILE
     {

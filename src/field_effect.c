@@ -770,9 +770,20 @@ u32 FieldEffectScript_ReadWord(u8 **script)
          + ((*script)[3] << 24);
 }
 
+// Field-effect scripts store each pointer as a signed 32-bit offset from its own
+// storage slot (asm/macros/field_effect_script.inc emits `.long (target - .)`),
+// so the real pointer is slot + offset. 0 is the NULL sentinel -- a real pointer
+// never targets its own slot. Does not advance *script; callers still do += 4.
+void *FieldEffectScript_ReadPtr(u8 **script)
+{
+    u8 *slot = *script;
+    u32 off = FieldEffectScript_ReadWord(script);
+    return off ? (void *)(slot + (s32)off) : NULL;
+}
+
 void FieldEffectScript_LoadTiles(u8 **script)
 {
-    struct SpriteSheet *sheet = (struct SpriteSheet *)SCRIPT_REBASE(FieldEffectScript_ReadWord(script));
+    struct SpriteSheet *sheet = (struct SpriteSheet *)FieldEffectScript_ReadPtr(script);
     if (GetSpriteTileStartByTag(sheet->tag) == 0xFFFF)
         LoadSpriteSheet(sheet);
     (*script) += 4;
@@ -780,7 +791,7 @@ void FieldEffectScript_LoadTiles(u8 **script)
 
 void FieldEffectScript_LoadFadedPalette(u8 **script)
 {
-    struct SpritePalette *palette = (struct SpritePalette *)SCRIPT_REBASE(FieldEffectScript_ReadWord(script));
+    struct SpritePalette *palette = (struct SpritePalette *)FieldEffectScript_ReadPtr(script);
     LoadSpritePalette(palette);
     UpdateSpritePaletteWithWeather(IndexOfSpritePaletteTag(palette->tag));
     (*script) += 4;
@@ -788,14 +799,14 @@ void FieldEffectScript_LoadFadedPalette(u8 **script)
 
 void FieldEffectScript_LoadPalette(u8 **script)
 {
-    struct SpritePalette *palette = (struct SpritePalette *)SCRIPT_REBASE(FieldEffectScript_ReadWord(script));
+    struct SpritePalette *palette = (struct SpritePalette *)FieldEffectScript_ReadPtr(script);
     LoadSpritePalette(palette);
     (*script) += 4;
 }
 
 void FieldEffectScript_CallNative(u8 **script, u32 *val)
 {
-    u32 (*func)(void) = (u32 (*)(void))SCRIPT_REBASE(FieldEffectScript_ReadWord(script));
+    u32 (*func)(void) = (u32 (*)(void))FieldEffectScript_ReadPtr(script);
     *val = func();
     (*script) += 4;
 }

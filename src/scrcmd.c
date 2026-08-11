@@ -305,8 +305,18 @@ bool8 ScrCmd_setmysteryeventstatus(struct ScriptContext *ctx)
 bool8 ScrCmd_loadword(struct ScriptContext *ctx)
 {
     u8 index = ScriptReadByte(ctx);
-
+#ifdef NATIVE_BUILD
+    // loadword's value is always a script pointer in this build (a bare number
+    // would already be broken by the old anchor emit). Resolve the self-relative
+    // offset to a real pointer while the slot is in hand, then stash it
+    // gScriptBase-relative so ScrCmd_message can reload it after the slot is gone
+    // (ScriptDataToPtr reverses this). 0 stays 0.
+    const u8 *slot = ctx->scriptPtr;
+    u32 off = ScriptReadWord(ctx);
+    ctx->data[index] = off ? (u32)(s32)((slot + (s32)off) - gScriptBase) : 0;
+#else
     ctx->data[index] = ScriptReadWord(ctx);
+#endif
     return FALSE;
 }
 
@@ -1272,7 +1282,7 @@ bool8 ScrCmd_message(struct ScriptContext *ctx)
     const u8 *msg = (const u8 *)ScriptReadPtr(ctx);
 
     if (msg == NULL)
-        msg = (const u8 *)SCRIPT_REBASE(ctx->data[0]);
+        msg = (const u8 *)ScriptDataToPtr(ctx->data[0]);
     ShowFieldMessage(msg);
     return FALSE;
 }
@@ -1282,7 +1292,7 @@ bool8 ScrCmd_pokenavcall(struct ScriptContext *ctx)
     const u8 *msg = (const u8 *)ScriptReadPtr(ctx);
 
     if (msg == NULL)
-        msg = (const u8 *)SCRIPT_REBASE(ctx->data[0]);
+        msg = (const u8 *)ScriptDataToPtr(ctx->data[0]);
     ShowPokenavFieldMessage(msg);
     return FALSE;
 }
@@ -1292,7 +1302,7 @@ bool8 ScrCmd_messageautoscroll(struct ScriptContext *ctx)
     const u8 *msg = (const u8 *)ScriptReadPtr(ctx);
 
     if (msg == NULL)
-        msg = (const u8 *)SCRIPT_REBASE(ctx->data[0]);
+        msg = (const u8 *)ScriptDataToPtr(ctx->data[0]);
     gTextFlags.autoScroll = TRUE;
     gTextFlags.forceMidTextSpeed = TRUE;
     ShowFieldAutoScrollMessage(msg);
@@ -1305,7 +1315,7 @@ bool8 ScrCmd_messageinstant(struct ScriptContext *ctx)
     const u8 *msg = (const u8 *)ScriptReadPtr(ctx);
 
     if (msg == NULL)
-        msg = (const u8 *)SCRIPT_REBASE(ctx->data[0]);
+        msg = (const u8 *)ScriptDataToPtr(ctx->data[0]);
     LoadMessageBoxAndBorderGfx();
     DrawDialogueFrame(0, TRUE);
     AddTextPrinterParameterized(0, FONT_NORMAL, msg, 0, 1, 0, NULL);

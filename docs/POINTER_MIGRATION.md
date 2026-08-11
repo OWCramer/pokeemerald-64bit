@@ -1,0 +1,123 @@
+# Migration: per-OS pointer schemes → one self-relative scheme
+
+## The problem this removes
+
+The game stores "pointers" as **4 bytes packed inside byte streams** (script bytecode,
+battle/AI scripts, MP2K sound data) — a GBA-era design where a pointer was 32 bits. On a
+64-bit host a real pointer is 8 bytes, so each 4-byte slot needs a trick, and today there are
+**three different ones plus an anchor**:
+
+| Target | How a 4-byte packed pointer works today |
+|---|---|
+| macOS / iOS | `target - gScriptBase` via Mach-O SUBTRACTOR; rebased at read (`gScriptBase + v`) |
+| Linux | 4-byte **absolute** (works only because the build is `-no-pie`, image < 4 GB) |
+| Android | PC-relative offset + a `.emerald_sptr` side table + a **post-link patcher** that rewrites ~32k slots to `gScriptBase`-relative |
+
+That is the single biggest source of fragility in the port (the cry crash, the Android
+patcher, the `-no-pie`/`-z notext`/`CpuSet` guards all descend from it), and every new 64-bit
+OS needs its own relocation model figured out from scratch.
+
+## The scheme it moves to: self-relative (PC-relative)
+
+Store `target - slot`; read `slot + storedOffset`. The reader already has the slot address
+(`T1_READ_PTR(streamPtr + n)`, `ScriptReadPtr(ctx)` off `ctx->scriptPtr`, `MP2K_event_goto`
+off `track->cmdPtr`, …), so no anchor is needed. It is exactly what the Android `sptr` already
+stores — **minus the patcher**.
+
+**Emit — one rule for every OS.** `target - .` (`.` = the slot) is a link-time constant on
+every target because the slot and the target move together:
+* Mach-O: SUBTRACTOR (already in use), resolved at link, no rebase.
+* ELF `.so` (Android): `R_*_PC32`, folds under `-Wl,-Bsymbolic`, no dynamic reloc, **no patcher**.
+* ELF exe (Linux): folds at link; `-no-pie` no longer required (can ship a normal PIE).
+
+**Read — uniform.** `PTR = slot ? slot + (s32)offset : NULL`. `0` stays the NULL sentinel
+(a real pointer never targets its own storage slot, so offset 0 is unambiguous).
+
+**Why 4-byte self-relative rather than native 8-byte.** ~300 battle/AI/contest reads use
+hardcoded offsets and strides (`T1_READ_PTR(p + 1); p += 5;`). Self-relative keeps pointers
+4 bytes, so those strides never move — a single macro change covers all 300. Native 8-byte
+would shift every one and force alignment padding. Self-relative reaches the same
+uniform, hack-free end state for a fraction of the churn.
+
+## What stays per-OS (legitimately, not hacks)
+
+Object-format cosmetics: Mach-O symbol underscores / section names, and exe vs `.so`
+vs `.dylib` link mode.
+
+One pointer scheme is per-OS, and unavoidably so: the **MP2K sound goto/loop targets on
+Mach-O** stay `gScriptBase`-relative (`target - _gScriptBase`, read `gScriptBase + offset`)
+rather than self-relative. On ELF a self-relative `target - .` between two same-file labels
+folds to a stable link-time constant; on Mach-O it also folds — but `ld64`'s
+`.subsections_via_symbols` re-lays-out the byte-packed song atoms afterward, so that folded
+constant goes stale and the loop jump lands in unmapped memory (`EXC_BAD_ACCESS` in
+`MP2KPlayerMain`). Referencing the *external* `gScriptBase` instead forces a SUBTRACTOR
+relocation that `ld64` resolves against the final layout. The battle/script/field dialects
+are unaffected because their goto targets are global symbols, which `ld64` does not shift.
+The split lives on `PORTABLE_ELF` in `MP2K_event_goto` / `SetPokemonCryTone` and the Darwin
+`ASM_PSEUDO_OP_CONV`; everything else is uniform self-relative.
+
+## Saves are untouched
+
+This is ROM-bytecode only. Save files are a raw byte image of the `SaveBlock*` structs, which
+contain no host pointers and are pinned to GBA layout by `STATIC_ASSERT`s. Full backward
+compatibility with real-hardware saves is unaffected, and those asserts are a build-time
+tripwire if anything ever drifts into the save path.
+
+## Migration phases (each is one commit, compiles, and is independently correct)
+
+Each interpreter migrates its **emit and read together**, isolated from the others, so any
+commit is a safe revert point. The old anchor macros stay until the last user is gone.
+
+| Phase | Scope |
+|---|---|
+| 0 | This document. |
+| 1 | **Field-effect scripts** — smallest, self-contained dialect. Proves the mechanism. |
+| 2 | **Overworld scripts** (`script.c`/`scrcmd.c`, `ScriptReadPtr`, `event.inc`). Handles the few `msgbox` value-only fallbacks. |
+| 3 | **Sound / MP2K** (`music_player.c`/`m4a.c`, `MP2K_event_goto`). |
+| 4 | **Battle family** — battle scripts, battle AI, contest AI, battle anim (`T1/T2_READ_PTR`). ~300 reads, one macro change. |
+| 5 | **Delete the machinery** — `gScriptBase` + rebase layer, the 3-way emit fork and `.if ELF_BUILD` macro forks → one form, Android `sptr`/`.emerald_sptr`/`elf_script_rebase.py`, `-z notext`/`-no-pie`/`CpuSet` <4 GB guard, GBA-only reader branches. |
+| 6 (optional) | **`PtrRebase32`** — the separate task/sprite `data[]` split-pointer problem (~15 files). Not bytecode; can keep a minimal anchor if not worth converting. |
+
+## Validation
+
+* Linux + Android: built/run locally (Android build deferred during this work).
+* macOS / iOS: CI builds on every push; runtime confirmation on device.
+* Whole-game runtime pass (overworld scripts, battles, AI, sound, field moves) after Phase 4/5,
+  plus loading a real-hardware save to confirm saves are byte-identical.
+
+## Status
+
+Phases 0–5 are complete: every bytecode dialect (field effects, overworld
+scripts, MP2K sound, battle/AI/contest/anim) reads pointers self-relative, the
+`.inc` macros and the sed emit a uniform `.long (target - .)`, and the anchor
+read path, the Android `sptr`/`.emerald_sptr`/`elf_script_rebase.py` patcher, and
+`-z notext` are deleted. The sole documented exception is the MP2K sound goto on
+Mach-O, which stays `gScriptBase`-relative (see "What stays per-OS"). Verified on
+Linux (clean build, links, boots, full play) and macOS (overworld, battles, and
+sound including town/route loop points and Pokémon cries — the ld64 layout crash
+is fixed). iOS/Android still need a build + run.
+
+Phase 6 (`PtrRebase32`) is **closed as "keep the minimal anchor"** — the outcome
+this document flagged as acceptable up front. Reasons it is not converted:
+
+* **Structurally can't widen.** The value is a runtime C pointer split across two
+  16-bit `data[]` slots. `struct Sprite` has only `data[8]`, with the pointer
+  already in the last two slots — there is no room for a full 64-bit (4-slot)
+  store without resizing a core engine struct the whole codebase assumes.
+* **The anchor stays either way.** `gScriptBase` is load-bearing for the msgbox
+  bytecode reload (`ScriptDataToPtr`), the Mach-O sound gotos, and `battle_setup`.
+  Converting `PtrRebase32` would remove one of several anchor users and delete
+  nothing. An anchor-free split-pointer (e.g. a handle table) would only trade a
+  proven ±2 GB recovery for table lifecycle risk across 16 files.
+
+So `PTR_REBASE32` remains the 2-slot value + `gScriptBase` recovery, documented in
+`global.h` as the intended final form rather than a pending step.
+
+## End state
+
+One emit rule and one read rule for **bytecode** pointers — self-relative, no per-OS
+scheme — with a single documented Mach-O exception (sound gotos) and a single
+retained runtime anchor (`gScriptBase`) shared by the msgbox reload, the Mach-O
+sound gotos, `battle_setup`, and the task/sprite split-pointer path. A new 64-bit
+target becomes "does it link a normal PIE? then bytecode pointers work" — no scheme
+to invent, no post-link patcher, no `-no-pie`/`-z notext`.

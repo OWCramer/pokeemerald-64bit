@@ -1076,7 +1076,7 @@ static void TrainerBattleLoadArgs(const struct TrainerBattleParameter *specs, co
             // the stored value is a gScriptBase offset and must be rebased.
             // SetU32 was doubly wrong here: it skipped the rebase and wrote only
             // 4 of the pointer's 8 bytes, leaving the top half stale.
-            SetPtr(specs->varPtr, SCRIPT_REBASE(TrainerBattleLoadArg32(data)));
+            SetPtr(specs->varPtr, T1_READ_PTR(data));
             data += 4;
             break;
         case TRAINER_PARAM_CLEAR_VAL_8BIT:

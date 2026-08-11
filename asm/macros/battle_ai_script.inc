@@ -5,11 +5,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -23,11 +19,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -41,11 +33,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -59,11 +47,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -83,11 +67,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -102,11 +82,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -121,11 +97,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -140,11 +112,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -159,11 +127,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -178,11 +142,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -197,11 +157,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -216,11 +172,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -235,11 +187,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -254,11 +202,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -273,11 +217,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -292,11 +232,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -310,11 +246,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -328,11 +260,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -346,11 +274,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -364,11 +288,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -381,11 +301,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -394,11 +310,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -411,11 +323,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -424,11 +332,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -441,11 +345,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -454,11 +354,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -471,11 +367,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -484,11 +376,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -502,11 +390,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -520,11 +404,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -537,11 +417,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -550,11 +426,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -567,11 +439,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -580,11 +448,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -597,11 +461,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -610,11 +470,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -627,11 +483,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -640,11 +492,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -657,11 +505,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -674,11 +518,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -714,11 +554,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -732,11 +568,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -750,11 +582,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -768,11 +596,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -816,11 +640,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -843,11 +663,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -862,11 +678,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -884,11 +696,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -902,11 +710,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -922,11 +726,7 @@
 	.ifc \param3, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param3
-	.else
-	.long (\param3 - _gScriptBase)
-	.endif
+	.long (\param3 - .)
 	.endif
 	.else
 	.int \param3
@@ -942,11 +742,7 @@
 	.ifc \param3, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param3
-	.else
-	.long (\param3 - _gScriptBase)
-	.endif
+	.long (\param3 - .)
 	.endif
 	.else
 	.int \param3
@@ -962,11 +758,7 @@
 	.ifc \param3, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param3
-	.else
-	.long (\param3 - _gScriptBase)
-	.endif
+	.long (\param3 - .)
 	.endif
 	.else
 	.int \param3
@@ -982,11 +774,7 @@
 	.ifc \param3, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param3
-	.else
-	.long (\param3 - _gScriptBase)
-	.endif
+	.long (\param3 - .)
 	.endif
 	.else
 	.int \param3
@@ -999,11 +787,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1016,11 +800,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1035,11 +815,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -1054,11 +830,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -1073,11 +845,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -1092,11 +860,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -1111,11 +875,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2
@@ -1129,11 +889,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -1150,11 +906,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1241,11 +993,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1258,11 +1006,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1280,11 +1024,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -1297,11 +1037,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1314,11 +1050,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1331,11 +1063,7 @@
 	.ifc \param0, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param0
-	.else
-	.long (\param0 - _gScriptBase)
-	.endif
+	.long (\param0 - .)
 	.endif
 	.else
 	.int \param0
@@ -1361,11 +1089,7 @@
 	.ifc \param1, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param1
-	.else
-	.long (\param1 - _gScriptBase)
-	.endif
+	.long (\param1 - .)
 	.endif
 	.else
 	.int \param1
@@ -1380,11 +1104,7 @@
 	.ifc \param2, NULL
 	.long 0
 	.else
-	.if ELF_BUILD
-	.long \param2
-	.else
-	.long (\param2 - _gScriptBase)
-	.endif
+	.long (\param2 - .)
 	.endif
 	.else
 	.int \param2

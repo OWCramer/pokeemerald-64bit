@@ -149,24 +149,15 @@ extern const u8 gScriptBase[];
 // in InsideOfTruck_EventScript_SetIntroFlags it read 0x01800d21, the bytes of
 // the next `compare`, instead of 0x1cdb4a -- so no script with a pointer
 // operand could work.
-static inline u8 *ScriptRebase(u32 v)
+// Self-relative pointer read: the 4-byte slot holds (target - slot), so the real
+// pointer is slot + offset. 0 is the NULL sentinel (a real pointer never targets
+// its own slot). Uniform on every 64-bit host -- no anchor.
+static inline u8 *T1ReadPtr(const u8 *ptr)
 {
-    // The anchor must be opaque to the optimizer. gScriptBase is defined as
-    // `const u8 gScriptBase[1] = {0}` in src/script.c, so within that
-    // translation unit the compiler can see the whole object: every rebased
-    // address is provably outside a one-byte array, which is undefined
-    // behaviour it may exploit. It folded reads through rebased pointers to the
-    // array's known zero contents, which made the first read in
-    // MapHeaderCheckScriptTable always zero, so the function always returned
-    // NULL and its entire loop body was deleted as dead code -- no map ever ran
-    // its ON_FRAME_TABLE scripts. This barrier launders the pointer so no size
-    // or contents assumption survives.
-    const u8 *base = gScriptBase;
-    __asm__("" : "+r"(base));
-    return (s32)v ? (u8 *)(uintptr_t)base + (s32)v : (u8 *)0;
+    u32 v = T1_READ_32(ptr);
+    return v ? (u8 *)ptr + (s32)v : (u8 *)0;
 }
-#define SCRIPT_REBASE(v) ScriptRebase(v)
-#define T1_READ_PTR(ptr) SCRIPT_REBASE(T1_READ_32(ptr))
+#define T1_READ_PTR(ptr) T1ReadPtr((const u8 *)(ptr))
 #else
 #define T1_READ_PTR(ptr) (u8 *) T1_READ_32(ptr)
 #endif
@@ -176,9 +167,13 @@ static inline u8 *ScriptRebase(u32 v)
 #define T2_READ_16(ptr) ((ptr)[0] + ((ptr)[1] << 8))
 #define T2_READ_32(ptr) ((ptr)[0] + ((ptr)[1] << 8) + ((ptr)[2] << 16) + ((ptr)[3] << 24))
 #ifdef NATIVE_BUILD
-#define T2_READ_PTR(ptr) ((void *)SCRIPT_REBASE(T2_READ_32(ptr)))
+static inline void *T2ReadPtr(const u8 *ptr)
+{
+    u32 v = T2_READ_32(ptr);
+    return v ? (void *)((u8 *)ptr + (s32)v) : (void *)0;
+}
+#define T2_READ_PTR(ptr) T2ReadPtr((const u8 *)(ptr))
 #else
-#define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
 #endif
 
@@ -227,14 +222,34 @@ static inline void *PtrRebase32(u32 v)
 // pointer fits in 32 bits: a stored value is already the whole address and
 // needs no anchor. macOS/arm64 cannot do this -- PIE is mandatory there and
 // -image_base is ignored -- which is the only reason the offset scheme exists.
-#undef SCRIPT_REBASE
+// T1_READ_PTR / T2_READ_PTR are self-relative and uniform (defined above), so
+// PORTABLE_ELF no longer overrides them. PTR_REBASE32 -- the separate task/sprite
+// split-pointer path -- deliberately keeps the runtime anchor and is forked here.
+// It cannot become self-relative: the value is a runtime C pointer squeezed into
+// two 16-bit data[] slots, and struct Sprite has only data[8] with the pointer
+// already in the last two, so there is no room to widen to a full 64-bit store.
+// gScriptBase stays regardless (bytecode reload, sound gotos, battle_setup all
+// use it), so this fork is the intended final state, not a pending migration.
+// See docs/POINTER_MIGRATION.md phase 6.
 #undef PTR_REBASE32
-#undef T1_READ_PTR
-#undef T2_READ_PTR
-#define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define PTR_REBASE32(v)  ((void *)(uintptr_t)(v))
-#define T1_READ_PTR(ptr) ((u8 *)(uintptr_t)T1_READ_32(ptr))
-#define T2_READ_PTR(ptr) ((void *)(uintptr_t)T2_READ_32(ptr))
+#endif
+
+#ifdef NATIVE_BUILD
+// Bytecode pointers are self-relative (offset from their own slot). That cannot
+// survive being copied into ctx->data[] and reloaded after the slot is gone
+// (ScrCmd_loadword stores, ScrCmd_message reloads). Those few sites instead
+// stash the resolved pointer as a gScriptBase-relative value and reverse it
+// here. Uniform on every 64-bit host -- gScriptBase is a plain runtime base with
+// no emit machinery, unlike the deleted SCRIPT_REBASE offset scheme. 0 = NULL.
+static inline u8 *ScriptDataToPtr(u32 v)
+{
+    const u8 *base = gScriptBase;
+    __asm__("" : "+r"(base));
+    return v ? (u8 *)(uintptr_t)base + (s32)v : (u8 *)0;
+}
+#else
+#define ScriptDataToPtr(v) ((u8 *)(uintptr_t)(v))
 #endif
 
 // Diagnostic log that survives a segfault; see src/platform/debug_log.c.

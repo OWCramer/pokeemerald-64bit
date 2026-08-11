@@ -1,0 +1,38 @@
+// Thin packaging project: the game (libmain.so) and libSDL3.so are built
+// outside Gradle by `make android` and staged into src/main/jniLibs/<abi>.
+// Gradle only compiles the SDL Java glue and packages those prebuilt libraries,
+// so there is no externalNativeBuild here.
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace = "com.pokeemerald"
+    compileSdk 35
+    defaultConfig {
+        applicationId "com.pokeemerald"
+        minSdkVersion 21
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.0"
+        ndk {
+            abiFilters 'x86_64', 'arm64-v8a'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    // libmain.so has text relocations (-z notext); keep it uncompressed and let
+    // it load, and don't let the linter block the build over the prebuilt libs.
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    lint {
+        abortOnError = false
+    }
+}
