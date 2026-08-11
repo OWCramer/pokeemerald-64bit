@@ -118,7 +118,11 @@ ifeq ($(SDL3),1)
   TARGET_PLATFORM := PLATFORM_SDL3
   ifeq ($(IOS),1)
     # Built by: cmake -DCMAKE_SYSTEM_NAME=iOS -DSDL_STATIC=ON ... (see PORTING.md)
-    IOS_SDL ?= $(CURDIR)/../SDL/install-iossim
+    ifeq ($(IOS_SDK_NAME),iphoneos)
+      IOS_SDL ?= $(CURDIR)/../SDL/install-iosdev
+    else
+      IOS_SDL ?= $(CURDIR)/../SDL/install-iossim
+    endif
     SDL_CFLAGS := -I$(IOS_SDL)/include
     SDL_LDFLAGS := -L$(IOS_SDL)/lib -lSDL3 \
         -Wl,-framework,CoreMedia -Wl,-framework,CoreVideo -Wl,-framework,CoreAudio \
