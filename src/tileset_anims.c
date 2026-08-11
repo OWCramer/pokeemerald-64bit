@@ -7,11 +7,15 @@
 #include "battle_transition.h"
 #include "fieldmap.h"
 
+// Room for every bank's copy of a frame, not just the current map's -- see
+// MirrorTilesetAnimToBanks. gTileset_General alone queues five transfers a
+// frame, so the vanilla 20 would overflow with two connected maps on screen and
+// silently drop whichever animations came last.
 static EWRAM_DATA struct {
     const u16 *src;
     u16 *dest;
     u16 size;
-} sTilesetDMA3TransferBuffer[20] = {0};
+} sTilesetDMA3TransferBuffer[20 * MAX_TILESET_BANKS] = {0};
 
 static u8 sTilesetDMA3TransferBufferSize;
 static u16 sPrimaryTilesetAnimCounter;
@@ -550,15 +554,57 @@ static void ResetTilesetAnimBuffer(void)
     CpuFill32(0, sTilesetDMA3TransferBuffer, sizeof sTilesetDMA3TransferBuffer);
 }
 
-static void AppendTilesetAnimToBuffer(const u16 *src, u16 *dest, u16 size)
+static void QueueTilesetAnimTransfer(const u16 *src, u16 *dest, u16 size)
 {
-    if (sTilesetDMA3TransferBufferSize < 20)
+    if (sTilesetDMA3TransferBufferSize < ARRAY_COUNT(sTilesetDMA3TransferBuffer))
     {
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].src = src;
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].dest = dest;
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].size = size;
         sTilesetDMA3TransferBufferSize ++;
     }
+}
+
+// Every animation destination in this file is a tile in the current map's
+// tileset. Each extra tileset bank holds its own copy of those tiles, so a
+// frame has to be written to every bank that shares the tileset it belongs to
+// -- otherwise the same stretch of water animates on one side of a map seam and
+// stands still on the other.
+//
+// Only tilesets shared with the current map animate this way, which in practice
+// means all of the outdoor animation: water, waterfalls, shorelines and flowers
+// all live in gTileset_General, the primary every Hoenn overworld map uses. A
+// connected map whose own secondary animates -- a town fountain, a flag --
+// shows its first frame; running those would need a second set of animation
+// callbacks and counters for every bank.
+static void MirrorTilesetAnimToBanks(const u16 *src, u16 *dest, u16 size)
+{
+    u32 tile = (u32)((u8 *)dest - (u8 *)BG_VRAM) / TILE_SIZE_4BPP;
+    bool32 inPrimary = tile < NUM_TILES_IN_PRIMARY;
+    const struct Tileset *animated;
+    u8 bank;
+
+    if (tile >= NUM_TILES_TOTAL)
+        return;
+
+    animated = inPrimary ? GetTilesetBankPrimary(0) : GetTilesetBankSecondary(0);
+    if (animated == NULL)
+        return;
+
+    for (bank = 1; bank < GetTilesetBankCount(); bank++)
+    {
+        const struct Tileset *tileset = inPrimary ? GetTilesetBankPrimary(bank)
+                                                  : GetTilesetBankSecondary(bank);
+
+        if (tileset == animated)
+            QueueTilesetAnimTransfer(src, (u16 *)((u8 *)dest + TILESET_BANK_TILE_BASE(bank) * TILE_SIZE_4BPP), size);
+    }
+}
+
+static void AppendTilesetAnimToBuffer(const u16 *src, u16 *dest, u16 size)
+{
+    QueueTilesetAnimTransfer(src, dest, size);
+    MirrorTilesetAnimToBanks(src, dest, size);
 }
 
 void TransferTilesetAnimsBuffer(void)
