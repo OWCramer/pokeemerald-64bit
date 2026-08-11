@@ -51,6 +51,13 @@ prefabs.json
 build/native/
 build/native-sdl3/
 /pokeemerald-sdl3
+
+# alternate build dirs (custom BUILD_DIR, e.g. build-linux) and their binaries,
+# plus the packaging staging/output dir written by tools/make_{appimage,tarball,
+# pacman}.sh
+/build-*/
+/pokeemerald-*-sdl3
+/dist/
 # audio/video capture from the diagnostic hooks
 *.wav
 *.ppm
