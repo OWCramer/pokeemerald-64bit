@@ -1190,7 +1190,12 @@ const u8 *GetMonIconTiles(u16 species, bool32 handleDeoxys)
     const u8 *iconSprite = gMonIconTable[species];
     if (species == SPECIES_DEOXYS && handleDeoxys == TRUE)
     {
-        iconSprite = (const u8 *)(0x400 + (u32)iconSprite); // use the specific Deoxys form icon (Speed in this case)
+        // Skip to the second frame -- the Speed-form icon. Written as pointer
+        // arithmetic, not `0x400 + (u32)iconSprite`: the cast truncated the
+        // pointer to its low 32 bits on a 64-bit host, so the copy that followed
+        // read from a wild address (the CpuSet guard rejected it, leaving the
+        // icon's tiles unwritten rather than crashing).
+        iconSprite += 0x400; // use the specific Deoxys form icon (Speed in this case)
     }
     return iconSprite;
 }
