@@ -22,7 +22,9 @@ def resolveVersionName = {
 def resolveVersionCode = { String name ->
     if (project.hasProperty('versionCode')) return project.property('versionCode').toString().toInteger()
     def m = (name =~ /(\d+)\.(\d+)\.(\d+)/)
-    if (m.find()) return m.group(1).toInteger() * 10000 + m.group(2).toInteger() * 100 + m.group(3).toInteger()
+    // Clamp to >= 1: Android rejects versionCode 0, and untagged builds resolve
+    // to the 0.0.0 fallback, which would otherwise map straight to 0.
+    if (m.find()) return Math.max(1, m.group(1).toInteger() * 10000 + m.group(2).toInteger() * 100 + m.group(3).toInteger())
     return 1
 }
 def appVersionName = resolveVersionName()
