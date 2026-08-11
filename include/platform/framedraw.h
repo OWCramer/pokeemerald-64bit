@@ -14,9 +14,15 @@ extern int gRenderOffsetY;
 // Port extension: a BG whose tilemap lives in a heap buffer, flat row-major,
 // at an arbitrary power-of-two size in tiles. map == NULL means the BG uses the
 // normal GBA VRAM screenblock layout.
+//
+// `bank` is a parallel plane of the same dimensions naming the tileset bank
+// each entry is to be decoded against, or NULL for none. It is separate from
+// the tilemap rather than packed into a widened entry because the tilemap is
+// also handed to bg.c, which writes plain 16-bit GBA entries into it.
 struct BgExtMap
 {
     u16 *map;
+    const u8 *bank;
     u16 widthTiles;
     u16 heightTiles;
 };

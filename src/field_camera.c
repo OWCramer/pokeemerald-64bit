@@ -60,6 +60,10 @@ static u16 sTilesH = 32;
 static u16 sPadMtX = 0;
 static u16 sPadMtY = 0;
 
+// Which tileset bank each tilemap entry belongs to, parallel to all three
+// layers' buffers. Only the renderer reads it; see struct BgExtMap.
+static u8 *sFieldTilemapBanks = NULL;
+
 #define FIELD_PAD_X       (sPadMtX * 16)
 #define FIELD_PAD_Y       (sPadMtY * 16)
 #define FIELD_WINDOW_MT_W (sTilesW / 2)
@@ -135,28 +139,35 @@ static bool32 AllocFieldTilemaps(u16 tw, u16 th)
     u16 *b1 = calloc(n, sizeof(u16));
     u16 *b2 = calloc(n, sizeof(u16));
     u16 *b3 = calloc(n, sizeof(u16));
+    u8 *bank = calloc(n, sizeof(u8));
     u32 i;
 
-    if (b1 == NULL || b2 == NULL || b3 == NULL)
+    if (b1 == NULL || b2 == NULL || b3 == NULL || bank == NULL)
     {
         free(b1);
         free(b2);
         free(b3);
+        free(bank);
         return FALSE;
     }
 
     free(gOverworldTilemapBuffer_Bg1);
     free(gOverworldTilemapBuffer_Bg2);
     free(gOverworldTilemapBuffer_Bg3);
+    free(sFieldTilemapBanks);
     gOverworldTilemapBuffer_Bg1 = b1;
     gOverworldTilemapBuffer_Bg2 = b2;
     gOverworldTilemapBuffer_Bg3 = b3;
+    sFieldTilemapBanks = bank;
     SetBgTilemapBuffer(1, b1);
     SetBgTilemapBuffer(2, b2);
     SetBgTilemapBuffer(3, b3);
     for (i = 1; i <= 3; i++)
     {
         gBgExt[i].map = (i == 1) ? b1 : (i == 2) ? b2 : b3;
+        // The three layers are drawn from the same metatile at the same offset,
+        // so one plane serves all of them.
+        gBgExt[i].bank = bank;
         gBgExt[i].widthTiles = tw;
         gBgExt[i].heightTiles = th;
     }
@@ -190,13 +201,18 @@ void FreeFieldTilemaps(void)
     u32 i;
 
     for (i = 1; i <= 3; i++)
+    {
         gBgExt[i].map = NULL;
+        gBgExt[i].bank = NULL;
+    }
     free(gOverworldTilemapBuffer_Bg1);
     free(gOverworldTilemapBuffer_Bg2);
     free(gOverworldTilemapBuffer_Bg3);
+    free(sFieldTilemapBanks);
     gOverworldTilemapBuffer_Bg1 = NULL;
     gOverworldTilemapBuffer_Bg2 = NULL;
     gOverworldTilemapBuffer_Bg3 = NULL;
+    sFieldTilemapBanks = NULL;
     sTilesW = 32;
     sTilesH = 32;
     SetRenderFieldLimits(DISPLAY_WIDTH, DISPLAY_HEIGHT);
