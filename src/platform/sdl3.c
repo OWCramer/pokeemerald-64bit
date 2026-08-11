@@ -219,7 +219,6 @@ static void UpdateInternalClock(void);
 static void OpenAudio(void);
 static void OpenFirstGamepad(void);
 static void DrawTouchOverlay(void);
-static u16 TouchKeys(void);
 static u16 GamepadKeys(void);
 #if MOBILE
 static void AttachTouchPad(void);
@@ -550,9 +549,9 @@ struct GbaBinding
     { DPAD_DOWN, HOST_NONE,     "DOWN",   SDLK_DOWN, 0,      SDL_GAMEPAD_BUTTON_DPAD_DOWN }, \
     { DPAD_LEFT, HOST_NONE,     "LEFT",   SDLK_LEFT, 0,      SDL_GAMEPAD_BUTTON_DPAD_LEFT }, \
     { DPAD_RIGHT, HOST_NONE,    "RIGHT",  SDLK_RIGHT, 0,     SDL_GAMEPAD_BUTTON_DPAD_RIGHT }, \
-    { 0, HOST_FASTFORWARD,      "FAST FWD", SDLK_SPACE, 0,              -1 }, \
+    { 0, HOST_FASTFORWARD,      "FAST FWD", SDLK_SPACE, 0,              SDL_GAMEPAD_BUTTON_RIGHT_STICK }, \
     { 0, HOST_SOFTRESET,        "RESET",    SDLK_R,     SDL_KMOD_LCTRL, -1 }, \
-    { 0, HOST_PAUSE,            "PAUSE",    SDLK_P,     SDL_KMOD_LCTRL, -1 }, \
+    { 0, HOST_PAUSE,            "PAUSE",    SDLK_P,     SDL_KMOD_LCTRL, SDL_GAMEPAD_BUTTON_LEFT_STICK }, \
 }
 
 static struct GbaBinding sBindings[] = DEFAULT_BINDINGS;
@@ -829,22 +828,29 @@ void Platform_GetBindLabel(u8 i, char *out, int outSize)
 // live in different spaces. `half` is a fraction of the logical *height* for
 // both axes so buttons stay square; the presentation preserves aspect, so
 // square here is square on screen.
-// `key` is the GBA button this pad is drawn for; `pad` is the SDL_GamepadButton
-// it presses on the virtual controller (see AttachTouchPad). The pad values
-// mirror the default gamepad bindings, so out of the box a tap resolves to its
-// GBA key through the ordinary binding table -- and stays consistent if rebound.
-struct TouchButton { float cx, cy, half; u16 key; int pad; };
+// `key` is the GBA button this pad is drawn for (0 for an emulator function);
+// `pad` is the SDL_GamepadButton it presses on the virtual controller (see
+// AttachTouchPad). The pad values mirror the default bindings, so out of the box
+// a tap resolves through the ordinary binding table -- to a GBA key, or, for the
+// two top buttons, to the HOST_PAUSE / HOST_FASTFORWARD emulator actions. `icon`
+// draws a glyph on the emulator-function buttons since they have no GBA label.
+enum { TB_ICON_NONE, TB_ICON_PAUSE, TB_ICON_FF };
+struct TouchButton { float cx, cy, half; u16 key; int pad; int icon; };
 static const struct TouchButton sTouchButtons[] = {
-    { 0.080f, 0.55f, 0.060f, DPAD_LEFT,     SDL_GAMEPAD_BUTTON_DPAD_LEFT      },
-    { 0.200f, 0.55f, 0.060f, DPAD_RIGHT,    SDL_GAMEPAD_BUTTON_DPAD_RIGHT     },
-    { 0.140f, 0.38f, 0.060f, DPAD_UP,       SDL_GAMEPAD_BUTTON_DPAD_UP        },
-    { 0.140f, 0.72f, 0.060f, DPAD_DOWN,     SDL_GAMEPAD_BUTTON_DPAD_DOWN      },
-    { 0.930f, 0.52f, 0.070f, A_BUTTON,      SDL_GAMEPAD_BUTTON_SOUTH          },
-    { 0.820f, 0.70f, 0.070f, B_BUTTON,      SDL_GAMEPAD_BUTTON_EAST           },
-    { 0.560f, 0.90f, 0.048f, START_BUTTON,  SDL_GAMEPAD_BUTTON_START          },
-    { 0.440f, 0.90f, 0.048f, SELECT_BUTTON, SDL_GAMEPAD_BUTTON_BACK           },
-    { 0.070f, 0.10f, 0.055f, L_BUTTON,      SDL_GAMEPAD_BUTTON_LEFT_SHOULDER  },
-    { 0.930f, 0.10f, 0.055f, R_BUTTON,      SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER },
+    { 0.080f, 0.55f, 0.060f, DPAD_LEFT,     SDL_GAMEPAD_BUTTON_DPAD_LEFT,      TB_ICON_NONE  },
+    { 0.200f, 0.55f, 0.060f, DPAD_RIGHT,    SDL_GAMEPAD_BUTTON_DPAD_RIGHT,     TB_ICON_NONE  },
+    { 0.140f, 0.38f, 0.060f, DPAD_UP,       SDL_GAMEPAD_BUTTON_DPAD_UP,        TB_ICON_NONE  },
+    { 0.140f, 0.72f, 0.060f, DPAD_DOWN,     SDL_GAMEPAD_BUTTON_DPAD_DOWN,      TB_ICON_NONE  },
+    { 0.930f, 0.52f, 0.070f, A_BUTTON,      SDL_GAMEPAD_BUTTON_SOUTH,          TB_ICON_NONE  },
+    { 0.820f, 0.70f, 0.070f, B_BUTTON,      SDL_GAMEPAD_BUTTON_EAST,           TB_ICON_NONE  },
+    { 0.560f, 0.90f, 0.048f, START_BUTTON,  SDL_GAMEPAD_BUTTON_START,          TB_ICON_NONE  },
+    { 0.440f, 0.90f, 0.048f, SELECT_BUTTON, SDL_GAMEPAD_BUTTON_BACK,           TB_ICON_NONE  },
+    { 0.070f, 0.10f, 0.055f, L_BUTTON,      SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,  TB_ICON_NONE  },
+    { 0.930f, 0.10f, 0.055f, R_BUTTON,      SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, TB_ICON_NONE  },
+    // Emulator functions, top-centre. key = 0 (not a GBA button); they resolve
+    // through the binding table to HOST_PAUSE / HOST_FASTFORWARD.
+    { 0.430f, 0.075f, 0.045f, 0, SDL_GAMEPAD_BUTTON_LEFT_STICK,  TB_ICON_PAUSE },
+    { 0.570f, 0.075f, 0.045f, 0, SDL_GAMEPAD_BUTTON_RIGHT_STICK, TB_ICON_FF    },
 };
 #define NUM_TOUCH_BUTTONS ((int)(sizeof(sTouchButtons) / sizeof(sTouchButtons[0])))
 
@@ -928,22 +934,6 @@ static bool FingerOnButton(const struct TouchButton *t, float lw, float lh)
     return false;
 }
 
-// Held GBA keys from the overlay, used only to highlight pressed buttons.
-// Actual input reaches the game through the virtual gamepad (SyncTouchPad).
-static u16 TouchKeys(void)
-{
-    u16 out = 0;
-    float lw, lh;
-
-    if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
-        return 0;
-
-    for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
-        if (FingerOnButton(&sTouchButtons[b], lw, lh))
-            out |= sTouchButtons[b].key;
-    return out;
-}
-
 #if MOBILE
 // Push the current finger-hit state into the virtual gamepad once per frame.
 // SDL turns the changes into ordinary gamepad button events on the next pump,
@@ -967,6 +957,19 @@ static void SyncTouchPad(void)
 }
 #endif
 
+// A single flat-shaded triangle (SDL has no fill-triangle call). Used for the
+// fast-forward glyph; colour is the same translucent black as the pause bars.
+static void FillTri(float x0, float y0, float x1, float y1, float x2, float y2)
+{
+    SDL_FColor c = { 0.0f, 0.0f, 0.0f, 200.0f / 255.0f };
+    SDL_Vertex v[3] = {
+        { { x0, y0 }, c, { 0, 0 } },
+        { { x1, y1 }, c, { 0, 0 } },
+        { { x2, y2 }, c, { 0, 0 } },
+    };
+    SDL_RenderGeometry(sdlRenderer, NULL, v, 3, NULL, 0);
+}
+
 static void DrawTouchOverlay(void)
 {
     // Shown whenever there is no controller, rather than waiting for a first
@@ -976,18 +979,39 @@ static void DrawTouchOverlay(void)
     if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
         return;
 
-    u16 held = TouchKeys();
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
         float h = t->half * lh;
-        SDL_FRect r = { t->cx * lw - h, t->cy * lh - h, h * 2, h * 2 };
-        bool on = (held & t->key) != 0;
+        float cx = t->cx * lw, cy = t->cy * lh;
+        SDL_FRect r = { cx - h, cy - h, h * 2, h * 2 };
+        bool on = FingerOnButton(t, lw, lh);
 
         SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, on ? 150 : 55);
         SDL_RenderFillRect(sdlRenderer, &r);
         SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 110);
         SDL_RenderRect(sdlRenderer, &r);
+
+        // The GBA buttons are identified by position; the two emulator-function
+        // buttons get a glyph so they are readable.
+        if (t->icon == TB_ICON_PAUSE)
+        {
+            float bw = h * 0.22f, bh = h * 0.85f, gap = h * 0.14f;
+            SDL_FRect p1 = { cx - gap - bw, cy - bh * 0.5f, bw, bh };
+            SDL_FRect p2 = { cx + gap,       cy - bh * 0.5f, bw, bh };
+            SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 200);
+            SDL_RenderFillRect(sdlRenderer, &p1);
+            SDL_RenderFillRect(sdlRenderer, &p2);
+        }
+        else if (t->icon == TB_ICON_FF)
+        {
+            float tw = h * 0.55f, th = h * 0.80f;
+            float top = cy - th * 0.5f, bot = cy + th * 0.5f;
+            float bx = cx - tw * 0.75f;
+            FillTri(bx, top, bx, bot, bx + tw, cy);       // first  >
+            bx += tw * 0.7f;
+            FillTri(bx, top, bx, bot, bx + tw, cy);       // second >
+        }
     }
     SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
 }
