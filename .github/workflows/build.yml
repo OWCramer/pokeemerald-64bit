@@ -1,70 +1,52 @@
-name: CI
+name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [native-arm64]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      GAME_VERSION: EMERALD
-      GAME_REVISION: 0
-      GAME_LANGUAGE: ENGLISH
-      MODERN: 0
-      COMPARE: 1
+  macos:
+    name: macOS (.app, arm64)
+    runs-on: macos-15   # Apple Silicon; the port is arm64-only
     steps:
-      - name: Checkout
-        uses: actions/checkout@master
+      - uses: actions/checkout@v4
 
-      - name: Checkout syms
-        if: ${{ github.event_name == 'push' }}
-        uses: actions/checkout@master
+      # libpng is for the asset tools (gbagfx); sdl3 is the runtime the app
+      # links and bundles. No GBA toolchain is needed -- the native build uses
+      # clang throughout, including for the preprocessor.
+      - name: Install dependencies
+        run: brew install sdl3 libpng pkg-config
+
+      - name: Build
+        run: make native -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package .app
+        run: ./tools/make_app.sh
+
+      # ditto rather than a plain zip: it preserves the bundle's executable bit
+      # and the ad-hoc signature, which a naive zip round-trip destroys.
+      - name: Archive bundle
+        run: ditto -c -k --sequesterRsrc --keepParent dist/pokeemerald.app pokeemerald-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v4
         with:
-          path: symbols
-          ref: symbols
+          name: pokeemerald-macos-arm64
+          path: pokeemerald-macos-arm64.zip
+          if-no-files-found: error
 
-      - name: Checkout agbcc
-        uses: actions/checkout@master
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
-          path: agbcc
-          repository: pret/agbcc
+          files: pokeemerald-macos-arm64.zip
 
-      - name: Install binutils
-        run: |
-          sudo apt update
-          sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev
-        # build-essential and git are already installed
-        # gcc-arm-none-eabi is only needed for the modern build
-        # as an alternative to dkP
-
-      - name: Install agbcc
-        run: |
-          ./build.sh
-          ./install.sh ../
-        working-directory: agbcc
-
-      - name: Compare
-        run: make -j${nproc} all syms
-
-      - name: Modern
-        env:
-          MODERN: 1
-          COMPARE: 0
-        run: make -j${nproc} all
-
-      - name: Move symfiles
-        if: ${{ github.event_name == 'push' }}
-        run: |
-          cp -v *.sym symbols/
-          echo "SYMBOLS_COMMIT_MSG=$( git log --format=%s ${GITHUB_SHA} )" >> $GITHUB_ENV
-
-      - name: Update symfiles
-        if: ${{ github.event_name == 'push' }}
-        uses: EndBug/add-and-commit@v7
-        with:
-          branch: symbols
-          cwd: "./symbols"
-          add: "*.sym"
-          message: ${{ env.SYMBOLS_COMMIT_MSG }}
+  # Linux (AppImage) and Windows (.exe) are not buildable from this tree yet.
+  # The 64-bit path is Mach-O only -- tools/mach_o_symbols.py,
+  # gen_macho_aliases.sh and -Wl,-alias_list have no ELF or PE equivalent here
+  # -- and the sole alternative in the Makefile is a hardcoded 32-bit MinGW
+  # cross-compile against SDL2 inherited from upstream, which predates the
+  # 64-bit pointer work. Adding either means porting the build first, not
+  # adding a job here.

@@ -286,14 +286,25 @@ ifeq ($(DINFO),1)
 endif
 
 ifeq ($(PORTABLE),1)
-  # Pin the deployment target instead of inheriting whatever SDK is installed --
+  # Pin the deployment target instead of inheriting whatever SDK is installed:
   # a beta SDK stamps minos with its own version and the build then refuses to
-  # launch on anything older. 26.0 matches the floor of the Homebrew libSDL3
-  # that gets bundled into the .app; targeting lower achieves nothing until SDL
-  # itself is rebuilt against an older SDK. The native link reuses CFLAGS, so
-  # this covers both compile and link.
-  MACOS_MIN ?= 26.0
-  override CFLAGS += -mmacosx-version-min=$(MACOS_MIN)
+  # launch on anything older.
+  #
+  # The floor is whatever the libSDL3 we link and bundle was built for --
+  # targeting lower gains nothing while that dylib is carried along, and
+  # targeting higher than the host SDK fails outright, which is what a CI
+  # runner on an older macOS would hit. Derived rather than hardcoded so it is
+  # correct on any host. The native link reuses CFLAGS, so this covers both
+  # compile and link.
+  ifeq ($(shell uname -s),Darwin)
+    SDL3_LIBDIR := $(shell pkg-config --variable=libdir sdl3 2>/dev/null)
+    MACOS_MIN ?= $(shell otool -l $(SDL3_LIBDIR)/libSDL3.dylib 2>/dev/null | \
+                         awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $$2; exit}')
+    ifeq ($(strip $(MACOS_MIN)),)
+      MACOS_MIN := 11.0
+    endif
+    override CFLAGS += -mmacosx-version-min=$(MACOS_MIN)
+  endif
 
   ifeq ($(DINFO),1)
     override CFLAGS += -O0
