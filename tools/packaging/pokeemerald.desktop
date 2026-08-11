@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Pokémon Emerald
+Comment=Pokémon Emerald (native decompilation build)
+Exec=pokeemerald
+Icon=pokeemerald
+Terminal=false
+Categories=Game;
+Keywords=pokemon;emerald;gba;
+# Must match the SDL app identifier set in src/platform/sdl3.c
+# (SDL_SetAppMetadata "pokeemerald"): on Wayland this is the xdg app_id and on
+# X11 the WM class, and the compositor uses it to bind the window to this
+# .desktop entry -- which is what makes KDE/GNOME show the icon below.
+StartupWMClass=pokeemerald

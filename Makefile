@@ -316,6 +316,14 @@ ifeq ($(MODERN),0)
   LIB := $(LIBPATH) -lgcc -lc -L../../libagbsyscall -lagbsyscall
 else ifeq ($(NATIVE64),1)
   CPPFLAGS += -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D UBFIX -D NATIVE_BUILD $(SDL_CFLAGS)
+  # PORTABLE_ELF is added to CPPFLAGS up near ELF_BUILD, but the `CPPFLAGS :=`
+  # reset above wipes it (NATIVE_BUILD survives only because it is re-added on
+  # the line above, after the reset). Re-add it here so the ELF pointer path in
+  # global.h and the Linux CpuSet path in bios.c actually compile in. ELF_BUILD
+  # is a make variable, so it is unaffected by the CPPFLAGS reset.
+  ifeq ($(ELF_BUILD),1)
+    CPPFLAGS += -D PORTABLE_ELF
+  endif
   MODERNCC := clang
   PATH_MODERNCC := $(MODERNCC)
   # clang compiles the preprocessed C directly; there is no cc1/as split.
@@ -371,6 +379,20 @@ ifeq ($(PORTABLE),1)
       MACOS_MIN := 11.0
     endif
     override CFLAGS += -mmacosx-version-min=$(MACOS_MIN)
+  else
+    # Modern mainline clang/gcc (Arch ships clang 22) promote several C
+    # type-safety diagnostics from warnings to *default errors*, independently
+    # of -Werror: incompatible pointer/function-pointer types, int<->pointer
+    # conversions and implicit declarations. This decompiled source relies on
+    # the historically-permissive behaviour, and Apple clang still warns rather
+    # than errors, so macOS builds clean. Downgrade them back to warnings on
+    # Linux so the same source compiles -- this changes no game logic, only how
+    # strictly the compiler reacts to pre-existing GBA-era type punning.
+    override CFLAGS += -Wno-error=incompatible-pointer-types \
+                       -Wno-error=incompatible-function-pointer-types \
+                       -Wno-error=int-conversion \
+                       -Wno-error=implicit-function-declaration \
+                       -Wno-error=implicit-int
   endif
 
   ifeq ($(DINFO),1)

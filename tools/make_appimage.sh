@@ -43,22 +43,45 @@ cat > "$APPDIR/AppRun" <<'APPRUN'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
+
+# Desktop integration so the icon shows in KDE/GNOME -- and on Wayland in
+# particular. Wayland has no protocol to attach a pixel icon to a window; the
+# compositor finds the icon only by matching the window's app_id
+# ("pokeemerald", set via SDL_SetAppMetadata) to an installed .desktop of the
+# same basename. An un-integrated AppImage has none, so we self-install one
+# (and the themed icon) into the user's data dir on first run, with Exec
+# pointing back at this AppImage so the menu entry launches it too. Idempotent
+# and best-effort: never fail the game over desktop bookkeeping.
+APPIMAGE_PATH="${APPIMAGE:-$0}"
+DATADIR="${XDG_DATA_HOME:-$HOME/.local/share}"
+DFILE="$DATADIR/applications/pokeemerald.desktop"
+IFILE="$DATADIR/icons/hicolor/256x256/apps/pokeemerald.png"
+if [ -w "${DATADIR%/*}" ] 2>/dev/null || mkdir -p "$DATADIR" 2>/dev/null; then
+    if [ ! -f "$DFILE" ] || ! grep -qF "Exec=$APPIMAGE_PATH" "$DFILE" 2>/dev/null; then
+        mkdir -p "${DFILE%/*}" "${IFILE%/*}" 2>/dev/null || true
+        cp -f "$HERE/pokeemerald.png" "$IFILE" 2>/dev/null || true
+        sed "s|^Exec=.*|Exec=$APPIMAGE_PATH|" "$HERE/pokeemerald.desktop" \
+            > "$DFILE" 2>/dev/null || true
+        update-desktop-database "$DATADIR/applications" >/dev/null 2>&1 || true
+        gtk-update-icon-cache -f "$DATADIR/icons/hicolor" >/dev/null 2>&1 || true
+    fi
+fi
+
 exec "$HERE/usr/bin/pokeemerald" "$@"
 APPRUN
 chmod +x "$APPDIR/AppRun"
 
-cat > "$APPDIR/pokeemerald.desktop" <<'DESKTOP'
-[Desktop Entry]
-Type=Application
-Name=pokeemerald
-Exec=pokeemerald
-Icon=pokeemerald
-Categories=Game;
-Terminal=false
-DESKTOP
+# Shared .desktop (Name=Pokémon Emerald, StartupWMClass=pokeemerald matching the
+# SDL app_id) drives the window<->icon association on both X11 and Wayland.
+cp tools/packaging/pokeemerald.desktop "$APPDIR/pokeemerald.desktop"
 
-cp graphics/title_screen/pokemon_logo.png "$APPDIR/pokeemerald.png" 2>/dev/null \
-    || printf '' > "$APPDIR/pokeemerald.png"
+# AppImages want the icon both at the AppDir root (for appimagetool) and in the
+# hicolor theme (so the self-install and integration daemons resolve Icon=).
+cp graphics/app_icon.png "$APPDIR/pokeemerald.png"
+mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
+         "$APPDIR/usr/share/applications"
+cp graphics/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/pokeemerald.png"
+cp tools/packaging/pokeemerald.desktop "$APPDIR/usr/share/applications/pokeemerald.desktop"
 
 mkdir -p dist
 # --appimage-extract-and-run: FUSE is usually unavailable in CI containers.

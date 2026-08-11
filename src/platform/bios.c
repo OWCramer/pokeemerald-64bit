@@ -91,7 +91,7 @@ static void CPUWriteByte(void *dest, uint8_t val)
 
 void CpuSet(const void *src, void *dst, u32 cnt)
 {
-#ifdef NATIVE_BUILD
+#if defined(NATIVE_BUILD) && !defined(PORTABLE_ELF)
     // A truncated 32-bit pointer is identifiable exactly, not heuristically:
     // macOS arm64 reserves the low 4GB as __PAGEZERO, so every real pointer --
     // image, heap, or mmap -- is above 0x100000000. Anything below that lost its
@@ -100,6 +100,13 @@ void CpuSet(const void *src, void *dst, u32 cnt)
     // An earlier version of this guard compared distance from gScriptBase and
     // rejected legitimate copies, which broke menu rendering. Do not reintroduce
     // a distance heuristic: the emulated hardware blocks are not near the anchor.
+    //
+    // This guard is INVERTED on the Linux -no-pie build (PORTABLE_ELF): there the
+    // image, statics and gHeap all sit *below* 4GB, so every legitimate pointer
+    // is < kMinValid. Applying it there rejected every tile/palette/OAM copy and
+    // left the screen black. -no-pie also means no pointer is ever truncated
+    // (the stored low 32 bits already are the whole address), so the guard is
+    // both harmful and unnecessary on ELF -- compile it out entirely.
     {
         const uintptr_t kMinValid = 0x100000000UL;
         if ((uintptr_t)dst < kMinValid || (uintptr_t)src < kMinValid)
