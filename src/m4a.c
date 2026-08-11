@@ -1854,8 +1854,19 @@ start_song:
     gPokemonCrySongs[i].tone = tone;
     gPokemonCrySongs[i].part[0] = &gPokemonCrySongs[i].part0;
     gPokemonCrySongs[i].part[1] = &gPokemonCrySongs[i].part1;
+    // The goto target must be stored the way MP2K_event_goto reads it back with
+    // SCRIPT_REBASE. On macOS/iOS/Android SCRIPT_REBASE adds gScriptBase, so
+    // store a gScriptBase-relative offset. On the Linux -no-pie build
+    // (PORTABLE_ELF) SCRIPT_REBASE is a plain cast, so the offset would be
+    // dereferenced as an absolute address -- the wild pointer that silences the
+    // cry here and segfaults it on other layouts. Store the absolute address
+    // there instead; -no-pie keeps it inside the low 32 bits.
+#ifdef PORTABLE_ELF
+    gPokemonCrySongs[i].gotoTarget = (u32)(uintptr_t)&gPokemonCrySongs[i].cont;
+#else
     gPokemonCrySongs[i].gotoTarget =
         (u32)(s32)((const u8 *)&gPokemonCrySongs[i].cont - gScriptBase);
+#endif
 
     mplayInfo->ident = ID_NUMBER;
 
