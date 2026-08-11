@@ -6,6 +6,28 @@ plugins {
     id 'com.android.application'
 }
 
+// Version is derived from the release tag, not hardcoded. CI passes the tag
+// explicitly via -PversionName=<x.y.z> (-PversionCode optional); a local build
+// falls back to `git describe`. versionCode must be a monotonically increasing
+// integer, so map x.y.z -> x*10000 + y*100 + z (e.g. 1.2.2 -> 10202).
+def resolveVersionName = {
+    if (project.hasProperty('versionName')) return project.property('versionName').toString()
+    try {
+        def p = ['git', 'describe', '--tags', '--always'].execute(null, rootProject.projectDir)
+        p.waitFor()
+        if (p.exitValue() == 0) return p.text.trim().replaceFirst(/^v/, '')
+    } catch (ignored) {}
+    return '0.0.0'
+}
+def resolveVersionCode = { String name ->
+    if (project.hasProperty('versionCode')) return project.property('versionCode').toString().toInteger()
+    def m = (name =~ /(\d+)\.(\d+)\.(\d+)/)
+    if (m.find()) return m.group(1).toInteger() * 10000 + m.group(2).toInteger() * 100 + m.group(3).toInteger()
+    return 1
+}
+def appVersionName = resolveVersionName()
+def appVersionCode = resolveVersionCode(appVersionName)
+
 android {
     namespace = "com.owcramer.pokeemerald"
     compileSdk 35
@@ -13,8 +35,8 @@ android {
         applicationId "com.owcramer.pokeemerald"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         ndk {
             abiFilters 'x86_64', 'arm64-v8a'
         }
