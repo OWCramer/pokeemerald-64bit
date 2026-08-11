@@ -23,6 +23,10 @@
 
 #define MAX_MAP_DATA_SIZE 131072
 
+// Distinct secondary tilesets that can be on screen at once: the current map
+// plus its four possible connections, rounded up.
+#define MAX_TILESET_BANKS 8
+
 #define NUM_TILES_PER_METATILE 8
 
 // Map coordinates are offset by 7 when using the map
@@ -45,6 +49,9 @@
 extern struct BackupMapLayout gBackupMapLayout;
 
 s32 MapGridGetMetatileIdAt(s32 x, s32 y);
+u8 MapGridGetTilesetBankAt(s32 x, s32 y);
+const struct Tileset *GetTilesetBank(u8 bank);
+u8 GetTilesetBankCount(void);
 s32 MapGridGetMetatileBehaviorAt(s32 x, s32 y);
 void MapGridSetMetatileIdAt(s32 x, s32 y, u16 metatile);
 void MapGridSetMetatileEntryAt(s32 x, s32 y, u16 metatile);

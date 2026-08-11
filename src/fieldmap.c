@@ -26,6 +26,22 @@ struct ConnectionFlags
 };
 
 EWRAM_DATA static u16 ALIGNED(4) sBackupMapData[MAX_MAP_DATA_SIZE] = {0};
+
+// Which tileset bank each cell's metatile id should be decoded against.
+//
+// A map cell is 16 bits with no room to spare (10 metatile id, 2 collision,
+// 4 elevation), so the bank cannot live in the cell itself. Bank 0 is always
+// the current map; connections register their own secondary tileset and write
+// their bank id here for every cell they fill.
+//
+// Without this, a neighbouring map's metatile id >= NUM_METATILES_IN_PRIMARY
+// was decoded against the *current* map's secondary tileset -- correct data
+// drawn with the wrong tiles, which is why Route 110 rendered as garbage from
+// Route 103 (Mauville vs Petalburg) while collision stayed right.
+EWRAM_DATA static u8 sBackupMapBank[MAX_MAP_DATA_SIZE] = {0};
+
+static const struct Tileset *sTilesetBanks[MAX_TILESET_BANKS];
+static u8 sTilesetBankCount;
 EWRAM_DATA struct MapHeader gMapHeader = {0};
 EWRAM_DATA struct Camera gCamera = {0};
 EWRAM_DATA static struct ConnectionFlags sMapConnectionFlags = {0};
@@ -92,10 +108,58 @@ void InitTrainerHillMap(void)
     GenerateTrainerHillFloorLayout(sBackupMapData);
 }
 
+// Returns the bank for a secondary tileset, registering it if new. Bank 0 is
+// reserved for the current map, so an unregisterable tileset (more distinct
+// secondaries than banks) falls back to it -- the old, wrong-but-harmless
+// behaviour rather than an out-of-range bank.
+static u8 RegisterTilesetBank(const struct Tileset *secondary)
+{
+    u8 i;
+
+    for (i = 0; i < sTilesetBankCount; i++)
+    {
+        if (sTilesetBanks[i] == secondary)
+            return i;
+    }
+
+    if (sTilesetBankCount < MAX_TILESET_BANKS)
+    {
+        sTilesetBanks[sTilesetBankCount] = secondary;
+        return sTilesetBankCount++;
+    }
+
+    return 0;
+}
+
+const struct Tileset *GetTilesetBank(u8 bank)
+{
+    if (bank >= sTilesetBankCount)
+        return NULL;
+    return sTilesetBanks[bank];
+}
+
+u8 GetTilesetBankCount(void)
+{
+    return sTilesetBankCount;
+}
+
+u8 MapGridGetTilesetBankAt(s32 x, s32 y)
+{
+    if (!AreCoordsWithinMapGridBounds(x, y))
+        return 0;
+    return sBackupMapBank[MapGridIndex(x, y)];
+}
+
 static void InitMapLayoutData(const struct MapHeader *mapHeader)
 {
     const struct MapLayout *mapLayout = mapHeader->mapLayout;
     CpuFastFill16(MAPGRID_UNDEFINED, sBackupMapData, sizeof(sBackupMapData));
+
+    // Everything defaults to the current map's bank; connections overwrite the
+    // cells they fill.
+    memset(sBackupMapBank, 0, sizeof(sBackupMapBank));
+    sTilesetBankCount = 0;
+    RegisterTilesetBank(mapLayout->secondaryTileset);
 
     gBackupMapLayout.map = sBackupMapData;
     gBackupMapLayout.width = mapLayout->width + MAP_OFFSET_W + MAP_BORDER_EXTRA * 2;
@@ -165,16 +229,25 @@ static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHea
     s32 i;
     const u16 *src;
     u16 *dest;
+    u8 *bankDest;
     s32 mapWidth;
+    u8 bank;
 
     mapWidth = connectedMapHeader->mapLayout->width;
     src = &connectedMapHeader->mapLayout->map[mapWidth * y2 + x2];
     dest = &gBackupMapLayout.map[gBackupMapLayout.width * y + x];
 
+    // Tag these cells so they are later decoded against the connected map's
+    // tileset rather than ours.
+    bank = RegisterTilesetBank(connectedMapHeader->mapLayout->secondaryTileset);
+    bankDest = &sBackupMapBank[gBackupMapLayout.width * y + x];
+
     for (i = 0; i < height; i++)
     {
         CpuCopy16(src, dest, width * 2);
+        memset(bankDest, bank, width);
         dest += gBackupMapLayout.width;
+        bankDest += gBackupMapLayout.width;
         src += mapWidth;
     }
 }
