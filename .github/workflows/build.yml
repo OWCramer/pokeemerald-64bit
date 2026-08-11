@@ -58,7 +58,11 @@ jobs:
   # developer's account.
   ios:
     name: iOS (.ipa, arm64, unsigned)
-    runs-on: macos-15
+    # macos-26, not macos-15: the app icon is an Icon Composer .icon bundle,
+    # which actool only understands from Xcode 26 on. The macos-15 image ships
+    # Xcode 16.4, whose actool exits 0 without compiling it -- so the first
+    # green run here produced an .ipa with no icon in it at all.
+    runs-on: macos-26
     env:
       # Matches the SDL the port is developed against. 3.4 for its UIScene
       # support; the Linux job pins 3.2.x separately for its own reasons.
@@ -69,6 +73,14 @@ jobs:
       - name: Install dependencies
         run: brew install libpng pkg-config cmake
 
+      # The image's default Xcode is not guaranteed to be the newest installed,
+      # and the icon needs 26+.
+      - name: Select newest Xcode
+        run: |
+          NEWEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$NEWEST"
+          xcodebuild -version | head -1
+
       # Homebrew's sdl3 is a macOS slice only, and the app links SDL statically,
       # so the iOS device slice has to be built here. Cached because it is by
       # far the slowest step and only changes when SDL_TAG does.
@@ -77,7 +89,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: SDL/install-iosdev
-          key: sdl3-iosdev-${{ env.SDL_TAG }}-macos-15
+          key: sdl3-iosdev-${{ env.SDL_TAG }}-macos-26
 
       - name: Build SDL3 for iOS
         if: steps.sdl.outputs.cache-hit != 'true'
@@ -104,6 +116,21 @@ jobs:
         run: |
           ./tools/make_ios_app.sh unsigned
           ./tools/make_ipa.sh dist/pokeemerald.app dist/pokeemerald-ios.ipa
+
+      # The bundle is assembled by hand, so nothing else would notice a missing
+      # icon or a stripped executable bit -- the first run passed green while
+      # shipping an .ipa with no icon.
+      - name: Verify .ipa
+        run: |
+          unzip -l dist/pokeemerald-ios.ipa
+          for f in Info.plist pokeemerald Assets.car; do
+            unzip -l dist/pokeemerald-ios.ipa | grep -q "Payload/pokeemerald.app/$f" \
+              || { echo "error: $f missing from .ipa"; exit 1; }
+          done
+          PERM=$(unzip -Z dist/pokeemerald-ios.ipa Payload/pokeemerald.app/pokeemerald | cut -c1-10)
+          [ "$PERM" = "-rwxr-xr-x" ] \
+            || { echo "error: executable bit not preserved (got $PERM)"; exit 1; }
+          echo "ipa verified"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -30,19 +30,25 @@ cp "$BIN" "$APP/pokeemerald"
 
 # The Icon Composer bundle compiles straight to an asset catalog; iOS finds it
 # by name through CFBundleIconName rather than by filename.
-if [ -d appicons/appicon.icon ]; then
-    xcrun actool appicons/appicon.icon --compile "$APP" --platform "$PLATFORM" \
+#
+# Test for the compiled Assets.car, not actool's exit status. Icon Composer
+# .icon bundles need Xcode 26+, and an older actool (Xcode 16.4, as on the
+# macos-15 CI image) exits 0 without compiling anything -- which previously
+# left the Info.plist advertising an icon the bundle did not contain.
+if [ -d appicons/appicon.icon ] \
+   && xcrun actool appicons/appicon.icon --compile "$APP" --platform "$PLATFORM" \
         --minimum-deployment-target 15.0 \
         --output-partial-info-plist /tmp/icon-partial.plist >/dev/null 2>&1 \
-        && ICON_KEYS='<key>CFBundleIconName</key><string>appicon</string>
+   && [ -f "$APP/Assets.car" ]; then
+    ICON_KEYS='<key>CFBundleIconName</key><string>appicon</string>
     <key>CFBundleIcons</key>
     <dict><key>CFBundlePrimaryIcon</key>
     <dict><key>CFBundleIconName</key><string>appicon</string></dict></dict>
     <key>CFBundleIcons~ipad</key>
     <dict><key>CFBundlePrimaryIcon</key>
-    <dict><key>CFBundleIconName</key><string>appicon</string></dict></dict>' \
-        || ICON_KEYS=''
+    <dict><key>CFBundleIconName</key><string>appicon</string></dict></dict>'
 else
+    echo "warning: app icon not compiled (needs Xcode 26+); building without one" >&2
     ICON_KEYS=''
 fi
 
