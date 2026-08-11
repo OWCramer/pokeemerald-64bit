@@ -1,9 +1,16 @@
 #!/bin/bash
 # Package the Linux native build as an AppImage.
 #
-# Only libSDL3 is bundled: everything else the binary needs is base-system
-# (glibc, X11/Wayland client libs) and bundling those causes more portability
-# problems than it solves. AppRun points the loader at the bundled copy.
+# Bundles libSDL3 and its non-base dependencies. Bundling only libSDL3 is not
+# enough: distro SDL builds link optional backends the target may not have --
+# Ubuntu's pulls in libsndio, which most systems do not ship, and the AppImage
+# then dies with 'libsndio.so.7: cannot open shared object file'.
+#
+# The excluded set is the usual AppImage one: the C/C++ runtime, the graphics
+# stack, and the display-server client libraries. Those must come from the host
+# because they are tied to its kernel, drivers and display server -- bundling
+# them causes worse breakage than it prevents. ALSA is excluded on the same
+# grounds; it is effectively always present.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,9 +24,19 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib"
 cp "$BIN" "$APPDIR/usr/bin/pokeemerald"
 
-# -L to copy the real file rather than the version symlink.
-ldd "$BIN" | awk '/=>/ {print $3}' | grep -E 'libSDL3' | while read -r lib; do
-    [ -f "$lib" ] && cp -L "$lib" "$APPDIR/usr/lib/"
+# ldd is transitive, so this reaches SDL's own dependencies too. -L copies the
+# real file rather than the version symlink.
+ldd "$BIN" | awk '/=>/ {print $3}' | grep -v '^$' | sort -u | while read -r lib; do
+    [ -f "$lib" ] || continue
+    case "$(basename "$lib")" in
+        ld-linux*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*) continue ;;
+        libstdc++.so*|libgcc_s.so*) continue ;;
+        libGL*|libEGL*|libGLX*|libGLdispatch*|libdrm*|libgbm*|libglapi*) continue ;;
+        libX11*|libxcb*|libXext*|libXrandr*|libXi*|libXcursor*|libXfixes*) continue ;;
+        libXrender*|libXss*|libXxf86vm*|libXau*|libXdmcp*) continue ;;
+        libwayland*|libasound.so*) continue ;;
+    esac
+    cp -Ln "$lib" "$APPDIR/usr/lib/" 2>/dev/null || true
 done
 
 cat > "$APPDIR/AppRun" <<'APPRUN'
