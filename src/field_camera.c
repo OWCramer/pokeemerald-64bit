@@ -1,6 +1,8 @@
+#include <stdlib.h>
 #include "global.h"
 #include "berry.h"
 #include "bike.h"
+#include "bg.h"
 #include "field_camera.h"
 #include "field_player_avatar.h"
 #include "fieldmap.h"
@@ -30,8 +32,8 @@ static void RedrawMapSliceSouth(struct FieldCameraOffset *, const struct MapLayo
 static void RedrawMapSliceEast(struct FieldCameraOffset *, const struct MapLayout *);
 static void RedrawMapSliceWest(struct FieldCameraOffset *, const struct MapLayout *);
 static void DrawWholeMapViewInternal(int, int, const struct MapLayout *);
-static void DrawMetatileAt(const struct MapLayout *, u16, int, int);
-static void DrawMetatile(s32, const u16 *, u16);
+static void DrawMetatileAt(const struct MapLayout *, u32, int, int);
+static void DrawMetatile(s32, const u16 *, u32);
 static void CameraPanningCB_PanAhead(void);
 
 static struct FieldCameraOffset sFieldCameraOffset;
@@ -44,31 +46,30 @@ COMMON_DATA struct CameraObject gFieldCamera = {0};
 COMMON_DATA u16 gTotalCameraPixelOffsetY = 0;
 COMMON_DATA u16 gTotalCameraPixelOffsetX = 0;
 
-// The field draws a 32x32 metatile (512x512px) window of map. The screen is
-// placed near its centre by drawing the window FIELD_PAD_*_MT metatiles up and
-// left of the camera and compensating the BG scroll by the same amount, so the
-// visible image is unchanged and only the off-screen slack moves.
+// The field's tilemap is sized to the window rather than to one of the GBA's
+// four fixed BG sizes. It is a flat row-major buffer on the heap that the
+// renderer reads directly (see struct BgExtMap), so it is bounded only by
+// memory -- not by screenSize's 2 bits, mapBaseIndex's 6, or VRAM.
 //
-// The screen sits 24..56px into an unpadded window: the tile offset jumps a
-// whole metatile at each crossing while the pixel offset accumulates per frame,
-// so the two run up to 32px out of phase and which way depends on the direction
-// of travel. Padding shifts that range to 112..144px across and 152..184px
-// down, leaving at least 112px of real map beyond every edge of the screen
-// before the ring's stale outer metatile is reached.
-#define FIELD_PAD_X_MT 7
-#define FIELD_PAD_Y_MT 8
-#define FIELD_PAD_X    (FIELD_PAD_X_MT * 16)
-#define FIELD_PAD_Y    (FIELD_PAD_Y_MT * 16)
+// The screen is placed near the middle of that window by drawing it sPadMt*
+// metatiles up and left of the camera and compensating the BG scroll by the
+// same amount, so the visible image is unchanged and only the off-screen slack
+// moves. Sizes are powers of two in tiles so wrapping is a mask.
+static u16 sTilesW = 32;
+static u16 sTilesH = 32;
+static u16 sPadMtX = 0;
+static u16 sPadMtY = 0;
 
-#define FIELD_ORIGIN_X (gSaveBlock1Ptr->pos.x - FIELD_PAD_X_MT)
-#define FIELD_ORIGIN_Y (gSaveBlock1Ptr->pos.y - FIELD_PAD_Y_MT)
+#define FIELD_PAD_X       (sPadMtX * 16)
+#define FIELD_PAD_Y       (sPadMtY * 16)
+#define FIELD_WINDOW_MT_W (sTilesW / 2)
+#define FIELD_WINDOW_MT_H (sTilesH / 2)
+#define FIELD_ORIGIN_X    (gSaveBlock1Ptr->pos.x - sPadMtX)
+#define FIELD_ORIGIN_Y    (gSaveBlock1Ptr->pos.y - sPadMtY)
 
-// A 512x512 BG is four 32x32 screenblocks in TL, TR, BL, BR order rather than
-// one flat 64x64 grid. Metatiles are 2x2 and land on even coordinates, so one
-// never straddles a screenblock edge and DrawMetatile's +1/+0x20 stay in range.
 static u32 TilemapOffset(u32 tx, u32 ty)
 {
-    return (((ty >> 5) * 2 + (tx >> 5)) * 1024) + ((ty & 31) * 32) + (tx & 31);
+    return ty * sTilesW + tx;
 }
 
 static void ResetCameraOffset(struct FieldCameraOffset *cameraOffset)
@@ -83,16 +84,148 @@ static void ResetCameraOffset(struct FieldCameraOffset *cameraOffset)
 static void AddCameraTileOffset(struct FieldCameraOffset *cameraOffset, u32 xOffset, u32 yOffset)
 {
     cameraOffset->xTileOffset += xOffset;
-    cameraOffset->xTileOffset %= 64;
+    cameraOffset->xTileOffset %= sTilesW;
     cameraOffset->yTileOffset += yOffset;
-    cameraOffset->yTileOffset %= 64;
+    cameraOffset->yTileOffset %= sTilesH;
 }
 
 static void AddCameraPixelOffset(struct FieldCameraOffset *cameraOffset, u32 xOffset, u32 yOffset)
 {
     // Wraps with the 512px window rather than the old 256px one.
-    cameraOffset->xPixelOffset = (cameraOffset->xPixelOffset + xOffset) & 0x1FF;
-    cameraOffset->yPixelOffset = (cameraOffset->yPixelOffset + yOffset) & 0x1FF;
+    cameraOffset->xPixelOffset = (cameraOffset->xPixelOffset + xOffset) & (sTilesW * 8 - 1);
+    cameraOffset->yPixelOffset = (cameraOffset->yPixelOffset + yOffset) & (sTilesH * 8 - 1);
+}
+
+// Powers of two in tiles, floor 256px (vanilla), ceiling 2048px.
+static u16 TilesForPixels(int px)
+{
+    u16 t = 32;
+
+    while ((int)t * 8 < px && t < 256)
+        t *= 2;
+    return t;
+}
+
+// What the current tilemap can back, given the screen sits sPadMt* into it and
+// the outermost ring is deliberately stale. Verified against the 256px case,
+// where this yields the 24px measured by instrumenting the camera.
+static void PublishFieldLimits(void)
+{
+    int px = sTilesW * 8;
+    int py = sTilesH * 8;
+    int ex = sPadMtX * 16;
+    int ey = 24 + sPadMtY * 16;
+    int farX = px - 288 - sPadMtX * 16;
+    int farY = py - 232 - sPadMtY * 16;
+
+    if (farX < ex)
+        ex = farX;
+    if (farY < ey)
+        ey = farY;
+    if (ex < 0)
+        ex = 0;
+    if (ey < 0)
+        ey = 0;
+    SetRenderFieldLimits(DISPLAY_WIDTH + 2 * ex, DISPLAY_HEIGHT + 2 * ey);
+}
+
+static bool32 AllocFieldTilemaps(u16 tw, u16 th)
+{
+    u32 n = (u32)tw * th;
+    u16 *b1 = calloc(n, sizeof(u16));
+    u16 *b2 = calloc(n, sizeof(u16));
+    u16 *b3 = calloc(n, sizeof(u16));
+    u32 i;
+
+    if (b1 == NULL || b2 == NULL || b3 == NULL)
+    {
+        free(b1);
+        free(b2);
+        free(b3);
+        return FALSE;
+    }
+
+    free(gOverworldTilemapBuffer_Bg1);
+    free(gOverworldTilemapBuffer_Bg2);
+    free(gOverworldTilemapBuffer_Bg3);
+    gOverworldTilemapBuffer_Bg1 = b1;
+    gOverworldTilemapBuffer_Bg2 = b2;
+    gOverworldTilemapBuffer_Bg3 = b3;
+    SetBgTilemapBuffer(1, b1);
+    SetBgTilemapBuffer(2, b2);
+    SetBgTilemapBuffer(3, b3);
+    for (i = 1; i <= 3; i++)
+    {
+        gBgExt[i].map = (i == 1) ? b1 : (i == 2) ? b2 : b3;
+        gBgExt[i].widthTiles = tw;
+        gBgExt[i].heightTiles = th;
+    }
+
+    sTilesW = tw;
+    sTilesH = th;
+    // Centre the screen in the window; the pad is whole metatiles because the
+    // draw is metatile-aligned.
+    sPadMtX = (tw * 8 >= 288) ? (tw * 8 - 288) / 32 : 0;
+    sPadMtY = (th * 8 >= 256) ? (th * 8 - 256) / 32 : 0;
+    // The tile and pixel offsets stay in lockstep: both only shrink modulo a
+    // larger power of two, so the congruence between them survives.
+    sFieldCameraOffset.xTileOffset %= tw;
+    sFieldCameraOffset.yTileOffset %= th;
+    return TRUE;
+}
+
+void InitFieldTilemaps(void)
+{
+    int reqW, reqH;
+
+    GetRequestedRenderSize(&reqW, &reqH);
+    sTilesW = 32;
+    sTilesH = 32;
+    AllocFieldTilemaps(TilesForPixels(reqW + 48), TilesForPixels(reqH + 48));
+    PublishFieldLimits();
+}
+
+void FreeFieldTilemaps(void)
+{
+    u32 i;
+
+    for (i = 1; i <= 3; i++)
+        gBgExt[i].map = NULL;
+    free(gOverworldTilemapBuffer_Bg1);
+    free(gOverworldTilemapBuffer_Bg2);
+    free(gOverworldTilemapBuffer_Bg3);
+    gOverworldTilemapBuffer_Bg1 = NULL;
+    gOverworldTilemapBuffer_Bg2 = NULL;
+    gOverworldTilemapBuffer_Bg3 = NULL;
+    sTilesW = 32;
+    sTilesH = 32;
+    SetRenderFieldLimits(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+}
+
+// Grow the tilemap to whatever the window now wants. Grow-only: shrinking would
+// reallocate and force a full redraw every time a menu pins the view back to
+// 240x160.
+static void FieldUpdateTilemapSize(void)
+{
+    int reqW, reqH;
+    u16 tw, th;
+
+    if (gOverworldTilemapBuffer_Bg1 == NULL)
+        return;
+
+    GetRequestedRenderSize(&reqW, &reqH);
+    // The window holds the vanilla view, up to 32px of camera phase jitter, the
+    // stale outer ring, and the expansion on both sides.
+    tw = TilesForPixels(reqW + 48);
+    th = TilesForPixels(reqH + 48);
+    if (tw < sTilesW)
+        tw = sTilesW;
+    if (th < sTilesH)
+        th = sTilesH;
+
+    if ((tw != sTilesW || th != sTilesH) && AllocFieldTilemaps(tw, th))
+        DrawWholeMapView();
+    PublishFieldLimits();
 }
 
 void ResetFieldCamera(void)
@@ -103,8 +236,10 @@ void ResetFieldCamera(void)
 void FieldUpdateBgTilemapScroll(void)
 {
     u32 r4, r5;
-    r5 = (sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan + FIELD_PAD_X) & 0x1FF;
-    r4 = (sVerticalCameraPan + sFieldCameraOffset.yPixelOffset + 8 + FIELD_PAD_Y) & 0x1FF;
+
+    FieldUpdateTilemapSize();
+    r5 = (sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan + FIELD_PAD_X) & (sTilesW * 8 - 1);
+    r4 = (sVerticalCameraPan + sFieldCameraOffset.yPixelOffset + 8 + FIELD_PAD_Y) & (sTilesH * 8 - 1);
 
     SetGpuReg(REG_OFFSET_BG1HOFS, r5);
     SetGpuReg(REG_OFFSET_BG1VOFS, r4);
@@ -129,21 +264,17 @@ void DrawWholeMapView(void)
 
 static void DrawWholeMapViewInternal(int x, int y, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 j;
-    u8 ty;
-    u8 tx;
+    u16 i;
+    u16 j;
+    u16 ty;
+    u16 tx;
 
-    for (i = 0; i < 64; i += 2)
+    for (i = 0; i < sTilesH; i += 2)
     {
-        ty = sFieldCameraOffset.yTileOffset + i;
-        if (ty >= 64)
-            ty -= 64;
-        for (j = 0; j < 64; j += 2)
+        ty = (sFieldCameraOffset.yTileOffset + i) % sTilesH;
+        for (j = 0; j < sTilesW; j += 2)
         {
-            tx = sFieldCameraOffset.xTileOffset + j;
-            if (tx >= 64)
-                tx -= 64;
+            tx = (sFieldCameraOffset.xTileOffset + j) % sTilesW;
             DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), x + j / 2, y + i / 2);
         }
     }
@@ -174,65 +305,53 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
 
 static void RedrawMapSliceNorth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 tx;
-    u8 ty = cameraOffset->yTileOffset + 60;
+    u16 i;
+    u16 tx;
+    u16 ty = (cameraOffset->yTileOffset + sTilesH - 4) % sTilesH;
 
-    if (ty >= 64)
-        ty -= 64;
-    for (i = 0; i < 64; i += 2)
+    for (i = 0; i < sTilesW; i += 2)
     {
-        tx = cameraOffset->xTileOffset + i;
-        if (tx >= 64)
-            tx -= 64;
-        DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), FIELD_ORIGIN_X + i / 2, FIELD_ORIGIN_Y + 30);
+        tx = (cameraOffset->xTileOffset + i) % sTilesW;
+        DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), FIELD_ORIGIN_X + i / 2, FIELD_ORIGIN_Y + FIELD_WINDOW_MT_H - 2);
     }
 }
 
 static void RedrawMapSliceSouth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 tx;
-    u8 ty = cameraOffset->yTileOffset;
+    u16 i;
+    u16 tx;
+    u16 ty = cameraOffset->yTileOffset;
 
-    for (i = 0; i < 64; i += 2)
+    for (i = 0; i < sTilesW; i += 2)
     {
-        tx = cameraOffset->xTileOffset + i;
-        if (tx >= 64)
-            tx -= 64;
+        tx = (cameraOffset->xTileOffset + i) % sTilesW;
         DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), FIELD_ORIGIN_X + i / 2, FIELD_ORIGIN_Y);
     }
 }
 
 static void RedrawMapSliceEast(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 ty;
-    u8 tx = cameraOffset->xTileOffset;
+    u16 i;
+    u16 ty;
+    u16 tx = cameraOffset->xTileOffset;
 
-    for (i = 0; i < 64; i += 2)
+    for (i = 0; i < sTilesH; i += 2)
     {
-        ty = cameraOffset->yTileOffset + i;
-        if (ty >= 64)
-            ty -= 64;
+        ty = (cameraOffset->yTileOffset + i) % sTilesH;
         DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), FIELD_ORIGIN_X, FIELD_ORIGIN_Y + i / 2);
     }
 }
 
 static void RedrawMapSliceWest(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 ty;
-    u8 tx = cameraOffset->xTileOffset + 60;
+    u16 i;
+    u16 ty;
+    u16 tx = (cameraOffset->xTileOffset + sTilesW - 4) % sTilesW;
 
-    if (tx >= 64)
-        tx -= 64;
-    for (i = 0; i < 64; i += 2)
+    for (i = 0; i < sTilesH; i += 2)
     {
-        ty = cameraOffset->yTileOffset + i;
-        if (ty >= 64)
-            ty -= 64;
-        DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), FIELD_ORIGIN_X + 30, FIELD_ORIGIN_Y + i / 2);
+        ty = (cameraOffset->yTileOffset + i) % sTilesH;
+        DrawMetatileAt(mapLayout, TilemapOffset(tx, ty), FIELD_ORIGIN_X + FIELD_WINDOW_MT_W - 2, FIELD_ORIGIN_Y + i / 2);
     }
 }
 
@@ -258,7 +377,7 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
     }
 }
 
-static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x, int y)
+static void DrawMetatileAt(const struct MapLayout *mapLayout, u32 offset, int x, int y)
 {
     u16 metatileId = MapGridGetMetatileIdAt(x, y);
     const u16 *metatiles;
@@ -277,7 +396,7 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
     DrawMetatile(MapGridGetMetatileLayerTypeAt(x, y), metatiles + metatileId * NUM_TILES_PER_METATILE, offset);
 }
 
-static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
+static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u32 offset)
 {
     switch (metatileLayerType)
     {
@@ -285,58 +404,58 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
         // Draw metatile's bottom layer to the bottom background layer.
         gOverworldTilemapBuffer_Bg3[offset] = tiles[0];
         gOverworldTilemapBuffer_Bg3[offset + 1] = tiles[1];
-        gOverworldTilemapBuffer_Bg3[offset + 0x20] = tiles[2];
-        gOverworldTilemapBuffer_Bg3[offset + 0x21] = tiles[3];
+        gOverworldTilemapBuffer_Bg3[offset + sTilesW] = tiles[2];
+        gOverworldTilemapBuffer_Bg3[offset + sTilesW + 1] = tiles[3];
 
         // Draw transparent tiles to the middle background layer.
         gOverworldTilemapBuffer_Bg2[offset] = 0;
         gOverworldTilemapBuffer_Bg2[offset + 1] = 0;
-        gOverworldTilemapBuffer_Bg2[offset + 0x20] = 0;
-        gOverworldTilemapBuffer_Bg2[offset + 0x21] = 0;
+        gOverworldTilemapBuffer_Bg2[offset + sTilesW] = 0;
+        gOverworldTilemapBuffer_Bg2[offset + sTilesW + 1] = 0;
 
         // Draw metatile's top layer to the top background layer.
         gOverworldTilemapBuffer_Bg1[offset] = tiles[4];
         gOverworldTilemapBuffer_Bg1[offset + 1] = tiles[5];
-        gOverworldTilemapBuffer_Bg1[offset + 0x20] = tiles[6];
-        gOverworldTilemapBuffer_Bg1[offset + 0x21] = tiles[7];
+        gOverworldTilemapBuffer_Bg1[offset + sTilesW] = tiles[6];
+        gOverworldTilemapBuffer_Bg1[offset + sTilesW + 1] = tiles[7];
         break;
     case METATILE_LAYER_TYPE_COVERED:
         // Draw metatile's bottom layer to the bottom background layer.
         gOverworldTilemapBuffer_Bg3[offset] = tiles[0];
         gOverworldTilemapBuffer_Bg3[offset + 1] = tiles[1];
-        gOverworldTilemapBuffer_Bg3[offset + 0x20] = tiles[2];
-        gOverworldTilemapBuffer_Bg3[offset + 0x21] = tiles[3];
+        gOverworldTilemapBuffer_Bg3[offset + sTilesW] = tiles[2];
+        gOverworldTilemapBuffer_Bg3[offset + sTilesW + 1] = tiles[3];
 
         // Draw metatile's top layer to the middle background layer.
         gOverworldTilemapBuffer_Bg2[offset] = tiles[4];
         gOverworldTilemapBuffer_Bg2[offset + 1] = tiles[5];
-        gOverworldTilemapBuffer_Bg2[offset + 0x20] = tiles[6];
-        gOverworldTilemapBuffer_Bg2[offset + 0x21] = tiles[7];
+        gOverworldTilemapBuffer_Bg2[offset + sTilesW] = tiles[6];
+        gOverworldTilemapBuffer_Bg2[offset + sTilesW + 1] = tiles[7];
 
         // Draw transparent tiles to the top background layer.
         gOverworldTilemapBuffer_Bg1[offset] = 0;
         gOverworldTilemapBuffer_Bg1[offset + 1] = 0;
-        gOverworldTilemapBuffer_Bg1[offset + 0x20] = 0;
-        gOverworldTilemapBuffer_Bg1[offset + 0x21] = 0;
+        gOverworldTilemapBuffer_Bg1[offset + sTilesW] = 0;
+        gOverworldTilemapBuffer_Bg1[offset + sTilesW + 1] = 0;
         break;
     case METATILE_LAYER_TYPE_NORMAL:
         // Draw garbage to the bottom background layer.
         gOverworldTilemapBuffer_Bg3[offset] = 0x3014;
         gOverworldTilemapBuffer_Bg3[offset + 1] = 0x3014;
-        gOverworldTilemapBuffer_Bg3[offset + 0x20] = 0x3014;
-        gOverworldTilemapBuffer_Bg3[offset + 0x21] = 0x3014;
+        gOverworldTilemapBuffer_Bg3[offset + sTilesW] = 0x3014;
+        gOverworldTilemapBuffer_Bg3[offset + sTilesW + 1] = 0x3014;
 
         // Draw metatile's bottom layer to the middle background layer.
         gOverworldTilemapBuffer_Bg2[offset] = tiles[0];
         gOverworldTilemapBuffer_Bg2[offset + 1] = tiles[1];
-        gOverworldTilemapBuffer_Bg2[offset + 0x20] = tiles[2];
-        gOverworldTilemapBuffer_Bg2[offset + 0x21] = tiles[3];
+        gOverworldTilemapBuffer_Bg2[offset + sTilesW] = tiles[2];
+        gOverworldTilemapBuffer_Bg2[offset + sTilesW + 1] = tiles[3];
 
         // Draw metatile's top layer to the top background layer, which covers object event sprites.
         gOverworldTilemapBuffer_Bg1[offset] = tiles[4];
         gOverworldTilemapBuffer_Bg1[offset + 1] = tiles[5];
-        gOverworldTilemapBuffer_Bg1[offset + 0x20] = tiles[6];
-        gOverworldTilemapBuffer_Bg1[offset + 0x21] = tiles[7];
+        gOverworldTilemapBuffer_Bg1[offset + sTilesW] = tiles[6];
+        gOverworldTilemapBuffer_Bg1[offset + sTilesW + 1] = tiles[7];
         break;
     }
     ScheduleBgCopyTilemapToVram(1);
@@ -347,18 +466,14 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
 static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x, s32 y)
 {
     x = (x - FIELD_ORIGIN_X) * 2;
-    if (x >= 64 || x < 0)
+    if (x >= sTilesW || x < 0)
         return -1;
-    x = x + cameraOffset->xTileOffset;
-    if (x >= 64)
-        x -= 64;
+    x = (x + cameraOffset->xTileOffset) % sTilesW;
 
     y = (y - FIELD_ORIGIN_Y) * 2;
-    if (y >= 64 || y < 0)
+    if (y >= sTilesH || y < 0)
         return -1;
-    y = y + cameraOffset->yTileOffset;
-    if (y >= 64)
-        y -= 64;
+    y = (y + cameraOffset->yTileOffset) % sTilesH;
 
     return TilemapOffset(x, y);
 }

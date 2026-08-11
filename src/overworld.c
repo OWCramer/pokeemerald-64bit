@@ -1415,12 +1415,7 @@ static void InitOverworldBgs(void)
     SetBgAttribute(1, BG_ATTR_MOSAIC, 1);
     SetBgAttribute(2, BG_ATTR_MOSAIC, 1);
     SetBgAttribute(3, BG_ATTR_MOSAIC, 1);
-    gOverworldTilemapBuffer_Bg1 = AllocZeroed(BG_SCREEN_SIZE * 4);
-    gOverworldTilemapBuffer_Bg2 = AllocZeroed(BG_SCREEN_SIZE * 4);
-    gOverworldTilemapBuffer_Bg3 = AllocZeroed(BG_SCREEN_SIZE * 4);
-    SetBgTilemapBuffer(1, gOverworldTilemapBuffer_Bg1);
-    SetBgTilemapBuffer(2, gOverworldTilemapBuffer_Bg2);
-    SetBgTilemapBuffer(3, gOverworldTilemapBuffer_Bg3);
+    InitFieldTilemaps();
     InitStandardTextBoxWindows();
 }
 
@@ -1428,9 +1423,7 @@ void CleanupOverworldWindowsAndTilemaps(void)
 {
     ClearMirageTowerPulseBlendEffect();
     FreeAllOverworldWindowBuffers();
-    TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg3);
-    TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg2);
-    TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg1);
+    FreeFieldTilemaps();
 }
 
 static void ResetSafariZoneFlag_(void)

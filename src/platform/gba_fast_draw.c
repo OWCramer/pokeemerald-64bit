@@ -1,5 +1,6 @@
 #ifdef RENDERER_FAST_DRAW
 #include "global.h"
+#include "platform/framedraw.h"
 #include <stdbool.h>
 #include "platform/dma.h"
 
@@ -37,8 +38,12 @@ extern void (*const gIntrTable[])(void);
 // this file depends on that, and moving them would relocate the whole UI. Only
 // the renderer draws a larger area, with the vanilla 240x160 view centred in it
 // and the offsets below converting between render space and GBA screen space.
-#define RENDER_MAX_WIDTH  512
-#define RENDER_MAX_HEIGHT 512
+// Must cover the largest render the dynamic tilemap can back: its ceiling is
+// 2048px per axis (see TilesForPixels), so the scanline masks and the
+// framebuffer have to reach that too. Undersizing these does not clip -- it
+// writes past the end of the scanline struct.
+#define RENDER_MAX_WIDTH  2048
+#define RENDER_MAX_HEIGHT 2048
 
 // Only the overworld draws a scrolling window of map around the screen, so it
 // is the only place where showing more than the vanilla 240x160 is meaningful.
@@ -48,13 +53,11 @@ bool32 gRenderExpansionAllowed = FALSE;
 static int sRequestedWidth  = DISPLAY_WIDTH;
 static int sRequestedHeight = DISPLAY_HEIGHT;
 
-// Bounded by what the field's 512x512px map window can supply. The screen sits
-// 112..144px across and 152..184px down that window (the offset depends on
-// travel direction -- see field_camera.c), and the ring's outermost metatile is
-// deliberately stale, so 112px beyond each edge is the most that is real map
-// under every condition.
-#define RENDER_LIMIT_WIDTH  (DISPLAY_WIDTH  + 112 * 2)
-#define RENDER_LIMIT_HEIGHT (DISPLAY_HEIGHT + 112 * 2)
+// How much the field's tilemap can currently back, published by field_camera.c
+// whenever it resizes. Starts at the vanilla view so nothing can over-render
+// before the field has set up.
+static int sFieldLimitWidth  = DISPLAY_WIDTH;
+static int sFieldLimitHeight = DISPLAY_HEIGHT;
 
 int gRenderWidth  = DISPLAY_WIDTH;
 int gRenderHeight = DISPLAY_HEIGHT;
@@ -66,10 +69,14 @@ static void ApplyRenderSize(void)
     int w = gRenderExpansionAllowed ? sRequestedWidth  : DISPLAY_WIDTH;
     int h = gRenderExpansionAllowed ? sRequestedHeight : DISPLAY_HEIGHT;
 
-    if (w > RENDER_LIMIT_WIDTH)
-        w = RENDER_LIMIT_WIDTH;
-    if (h > RENDER_LIMIT_HEIGHT)
-        h = RENDER_LIMIT_HEIGHT;
+    if (w > sFieldLimitWidth)
+        w = sFieldLimitWidth;
+    if (h > sFieldLimitHeight)
+        h = sFieldLimitHeight;
+    if (w > RENDER_MAX_WIDTH)
+        w = RENDER_MAX_WIDTH;
+    if (h > RENDER_MAX_HEIGHT)
+        h = RENDER_MAX_HEIGHT;
     if (w < DISPLAY_WIDTH)
         w = DISPLAY_WIDTH;
     if (h < DISPLAY_HEIGHT)
@@ -86,6 +93,23 @@ void SetRenderSize(int w, int h)
 {
     sRequestedWidth  = w;
     sRequestedHeight = h;
+    ApplyRenderSize();
+}
+
+// The size the window would like, before the field's tilemap clamps it. The
+// field uses this to decide how large its tilemap needs to be.
+void GetRequestedRenderSize(int *w, int *h)
+{
+    *w = sRequestedWidth;
+    *h = sRequestedHeight;
+}
+
+void SetRenderFieldLimits(int maxW, int maxH)
+{
+    if (maxW == sFieldLimitWidth && maxH == sFieldLimitHeight)
+        return;
+    sFieldLimitWidth  = maxW;
+    sFieldLimitHeight = maxH;
     ApplyRenderSize();
 }
 
@@ -112,6 +136,26 @@ struct bgPriority {
     char priority;
     char subPriority;
 };
+
+// Port extension. A BG listed here reads its tilemap straight out of a heap
+// buffer in a flat row-major layout instead of from VRAM screenblocks. That
+// sidesteps all three GBA limits at once -- the 2-bit screenSize, the 6-bit
+// mapBaseIndex, and the 64K VRAM budget -- so the overworld's tilemap can be
+// sized to the window rather than to one of four fixed sizes. Widths and
+// heights must be powers of two in tiles so the wrap is a mask.
+struct BgExtMap gBgExt[4];
+
+// One tilemap entry. Flat maps are row-major; GBA maps are 32x32 screenblocks,
+// so a 512px-wide one jumps a whole screenblock at tile 32.
+static inline uint32_t FetchBgEntry(const uint16_t *bgmap, unsigned int rowLoc,
+                                    unsigned int tx, unsigned int mapWidth, bool flatMap)
+{
+    if (flatMap)
+        return bgmap[rowLoc + (tx & (mapWidth - 1))];
+    if ((tx & 63) > 31 && mapWidth > 32)
+        return bgmap[rowLoc + (tx & 31) + 0x400];
+    return bgmap[rowLoc + (tx & 31)];
+}
 
 static const uint16_t bgMapSizes[][2] =
 {
@@ -208,11 +252,12 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
-    unsigned int mapWidth = bgMapSizes[control >> 14][0];
-    unsigned int mapHeight = bgMapSizes[control >> 14][1];
+    bool flatMap = (gBgExt[bgNum].map != NULL);
+    unsigned int mapWidth  = flatMap ? gBgExt[bgNum].widthTiles  : bgMapSizes[control >> 14][0];
+    unsigned int mapHeight = flatMap ? gBgExt[bgNum].heightTiles : bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
-    uint16_t *bgmap = (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -228,22 +273,22 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
-    unsigned int yy = (lineNum + voffs) & 0x1FF;
-    
-    
-    if (yy > 255 && mapHeightInPixels > 256) {
-        //the width check is for 512x512 mode support, it jumps by two screen bases instead
-        bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+    unsigned int xx = (hoffs - gRenderOffsetX) & (mapWidthInPixels - 1);
+    unsigned int yy = (lineNum + voffs) & (mapHeightInPixels - 1);
+
+    if (!flatMap)
+    {
+        if (yy > 255 && mapHeightInPixels > 256) {
+            //the width check is for 512x512 mode support, it jumps by two screen bases instead
+            bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+        }
+        yy &= 0xFF;
     }
-    
-    xx &= 0x1FF;
-    yy &= 0xFF;
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
     uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
-    if (firstTileData == 0 && mapWidthInPixels > 256)
+    if (!flatMap && firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
         {
@@ -266,15 +311,12 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     
     unsigned int startTileX = xx / 8;
     unsigned int startTileY = yy / 8;
-    unsigned int startTileYLoc = startTileY * 32;
+    unsigned int startTileYLoc = startTileY * (flatMap ? mapWidth : 32);
     unsigned int visibleTilePixels = xx & 7;
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    if (startTileX > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + (startTileX & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + (startTileX & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
     unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -347,10 +389,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
-        else
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
+        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -407,10 +446,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -463,11 +499,12 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
-    unsigned int mapWidth = bgMapSizes[control >> 14][0];
-    unsigned int mapHeight = bgMapSizes[control >> 14][1];
+    bool flatMap = (gBgExt[bgNum].map != NULL);
+    unsigned int mapWidth  = flatMap ? gBgExt[bgNum].widthTiles  : bgMapSizes[control >> 14][0];
+    unsigned int mapHeight = flatMap ? gBgExt[bgNum].heightTiles : bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
-    uint16_t *bgmap = (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -483,22 +520,22 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
-    unsigned int yy = (lineNum + voffs) & 0x1FF;
-    
-    
-    if (yy > 255 && mapHeightInPixels > 256) {
-        //the width check is for 512x512 mode support, it jumps by two screen bases instead
-        bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+    unsigned int xx = (hoffs - gRenderOffsetX) & (mapWidthInPixels - 1);
+    unsigned int yy = (lineNum + voffs) & (mapHeightInPixels - 1);
+
+    if (!flatMap)
+    {
+        if (yy > 255 && mapHeightInPixels > 256) {
+            //the width check is for 512x512 mode support, it jumps by two screen bases instead
+            bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+        }
+        yy &= 0xFF;
     }
-    
-    xx &= 0x1FF;
-    yy &= 0xFF;
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
     uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
-    if (firstTileData == 0 && mapWidthInPixels > 256)
+    if (!flatMap && firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
         {
@@ -521,15 +558,12 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     
     unsigned int startTileX = xx / 8;
     unsigned int startTileY = yy / 8;
-    unsigned int startTileYLoc = startTileY * 32;
+    unsigned int startTileYLoc = startTileY * (flatMap ? mapWidth : 32);
     unsigned int visibleTilePixels = xx & 7;
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    if (startTileX > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + (startTileX & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + (startTileX & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
     unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -587,10 +621,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
-        else
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
+        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -647,10 +678,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -703,11 +731,12 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
-    unsigned int mapWidth = bgMapSizes[control >> 14][0];
-    unsigned int mapHeight = bgMapSizes[control >> 14][1];
+    bool flatMap = (gBgExt[bgNum].map != NULL);
+    unsigned int mapWidth  = flatMap ? gBgExt[bgNum].widthTiles  : bgMapSizes[control >> 14][0];
+    unsigned int mapHeight = flatMap ? gBgExt[bgNum].heightTiles : bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
-    uint16_t *bgmap = (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -723,22 +752,22 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
-    unsigned int yy = (lineNum + voffs) & 0x1FF;
-    
-    
-    if (yy > 255 && mapHeightInPixels > 256) {
-        //the width check is for 512x512 mode support, it jumps by two screen bases instead
-        bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+    unsigned int xx = (hoffs - gRenderOffsetX) & (mapWidthInPixels - 1);
+    unsigned int yy = (lineNum + voffs) & (mapHeightInPixels - 1);
+
+    if (!flatMap)
+    {
+        if (yy > 255 && mapHeightInPixels > 256) {
+            //the width check is for 512x512 mode support, it jumps by two screen bases instead
+            bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+        }
+        yy &= 0xFF;
     }
-    
-    xx &= 0x1FF;
-    yy &= 0xFF;
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
     uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
-    if (firstTileData == 0 && mapWidthInPixels > 256)
+    if (!flatMap && firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
         {
@@ -761,15 +790,12 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     
     unsigned int startTileX = xx / 8;
     unsigned int startTileY = yy / 8;
-    unsigned int startTileYLoc = startTileY * 32;
+    unsigned int startTileYLoc = startTileY * (flatMap ? mapWidth : 32);
     unsigned int visibleTilePixels = xx & 7;
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    if (startTileX > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + (startTileX & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + (startTileX & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
     unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -834,10 +860,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
-        else
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
+        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -894,10 +917,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -948,11 +968,12 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int screenBaseBlock = (control >> 8) & 0x3F;
     unsigned int bitsPerPixel = ((control >> 7) & 1) ? 8 : 4;
     bool is8bpp = (bitsPerPixel == 8);
-    unsigned int mapWidth = bgMapSizes[control >> 14][0];
-    unsigned int mapHeight = bgMapSizes[control >> 14][1];
+    bool flatMap = (gBgExt[bgNum].map != NULL);
+    unsigned int mapWidth  = flatMap ? gBgExt[bgNum].widthTiles  : bgMapSizes[control >> 14][0];
+    unsigned int mapHeight = flatMap ? gBgExt[bgNum].heightTiles : bgMapSizes[control >> 14][1];
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
-    uint16_t *bgmap = (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -968,22 +989,22 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     if (control & BGCNT_MOSAIC)
         lineNum = applyBGVerticalMosaicEffect(lineNum);
     
-    unsigned int xx = (hoffs - gRenderOffsetX) & 0x1FF;
-    unsigned int yy = (lineNum + voffs) & 0x1FF;
-    
-    
-    if (yy > 255 && mapHeightInPixels > 256) {
-        //the width check is for 512x512 mode support, it jumps by two screen bases instead
-        bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+    unsigned int xx = (hoffs - gRenderOffsetX) & (mapWidthInPixels - 1);
+    unsigned int yy = (lineNum + voffs) & (mapHeightInPixels - 1);
+
+    if (!flatMap)
+    {
+        if (yy > 255 && mapHeightInPixels > 256) {
+            //the width check is for 512x512 mode support, it jumps by two screen bases instead
+            bgmap += (mapWidthInPixels > 256) ? 0x800 : 0x400;
+        }
+        yy &= 0xFF;
     }
-    
-    xx &= 0x1FF;
-    yy &= 0xFF;
     
     uint32_t lineTile = ((lineNum + voffs) & 0xFF) / 8;
     uint32_t firstTile = bgmap[lineTile*32] & 0x3FF;
     uint32_t firstTileData = *(uint32_t*)&bgtiles[(firstTile * (bitsPerPixel * 8)) + ((lineTile & 7) * bitsPerPixel)];
-    if (firstTileData == 0 && mapWidthInPixels > 256)
+    if (!flatMap && firstTileData == 0 && mapWidthInPixels > 256)
     {
         for (uint32_t i = 1; i < 32; i++)
         {
@@ -1006,15 +1027,12 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     
     unsigned int startTileX = xx / 8;
     unsigned int startTileY = yy / 8;
-    unsigned int startTileYLoc = startTileY * 32;
+    unsigned int startTileYLoc = startTileY * (flatMap ? mapWidth : 32);
     unsigned int visibleTilePixels = xx & 7;
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    if (startTileX > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + (startTileX & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + (startTileX & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
     unsigned int tileNum = entry & 0x3FF;
     unsigned int paletteNum = (entry >> 12) & 0xF;
     unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -1068,10 +1086,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        if (( (startTileX+currTile) & 63) > 31 && mapWidthInPixels > 256)
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31) + 0x400];
-        else
-            entry = bgmap[startTileYLoc + ((startTileX+currTile) & 31)];
+        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
         tileNum = entry & 0x3FF;
         paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -1128,10 +1143,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         x += 8;
     }
     //draw right most tile
-    if (((startTileX+(gRenderWidth/8)) & 63) > 31 && mapWidthInPixels > 256)
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31) + 0x400];
-    else
-        entry = bgmap[startTileYLoc + ((startTileX+(gRenderWidth/8)) & 31)];
+    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
     tileNum = entry & 0x3FF;
     paletteNum = (entry >> 12) & 0xF;
         palBase = is8bpp ? 0 : (paletteNum << 4);
@@ -1910,7 +1922,7 @@ static void DrawSpritesWinMask(struct scanlineData* scanline, int vcount)
 
                 unsigned int global_x = local_x + x;
 
-                if (global_x < 0 || global_x >= DISPLAY_WIDTH)
+                if (global_x < 0 || global_x >= (unsigned int)gRenderWidth)
                     continue;
 
                 if (oam->mosaic == 1)
@@ -1959,7 +1971,7 @@ static void DrawSpritesWinMask(struct scanlineData* scanline, int vcount)
                 if (pixel != 0)
                 {
                     //this code runs if pixel is to be drawn
-                    if (global_x < DISPLAY_WIDTH && global_x >= 0)
+                    if (global_x < (unsigned int)gRenderWidth && global_x >= 0)
                     {
                         if (scanline->winMask[global_x] & WINMASK_WINOUT)
                             scanline->winMask[global_x] = (REG_WINOUT >> 8) & 0x3F;
@@ -2081,7 +2093,7 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
 
             unsigned int global_x = local_x + x;
 
-            if (global_x < 0 || global_x >= DISPLAY_WIDTH)
+            if (global_x < 0 || global_x >= (unsigned int)gRenderWidth)
                 continue;
 
             if (isAffine)
@@ -2154,7 +2166,7 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
                 }
                 
                 //this code runs if pixel is to be drawn
-                if (global_x < DISPLAY_WIDTH && global_x >= 0)
+                if (global_x < (unsigned int)gRenderWidth && global_x >= 0)
                 {
                     //check if its enabled in the window (if window is enabled)
                     if (IsInsideWinIn == true)
@@ -2280,7 +2292,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
             uint8_t* pixelData = &tiledata[(oam->tileNum + block_offset) * TILE_SIZE_4BPP + (tile_y * 4)];
             uint32_t pixel32 = *(uint32_t*)pixelData; //load whole tile worth of palette pixels
             
-            if (x >= 0 && x + TILE_WIDTH <= DISPLAY_WIDTH)
+            if (x >= 0 && x + TILE_WIDTH <= gRenderWidth)
             {
                 if (windowsEnabled)
                 {
@@ -2508,9 +2520,9 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                         }
                     }
                 }
-                else if(x < DISPLAY_WIDTH && x + TILE_WIDTH > DISPLAY_WIDTH) //right side
+                else if(x < gRenderWidth && x + TILE_WIDTH > gRenderWidth) //right side
                 {
-                    int amountOfPixelsToBeDrawn = DISPLAY_WIDTH-x;
+                    int amountOfPixelsToBeDrawn = gRenderWidth-x;
                     if (flipX)
                     {
                         for (int i = 0; i < amountOfPixelsToBeDrawn; i++)

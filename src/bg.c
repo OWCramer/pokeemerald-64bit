@@ -315,9 +315,12 @@ void ResetBgsAndClearDma3BusyFlags(u32 leftoverFireRedLeafGreenVariable)
 
 void InitBgsFromTemplates(u8 bgMode, const struct BgTemplate *templates, u8 numTemplates)
 {
-    // Any screen that sets up its own BGs gets the vanilla viewport; the
-    // overworld opts back in right after this call.
+    // Any screen that sets up its own BGs gets the vanilla viewport and the
+    // normal VRAM tilemap layout; the overworld opts back in right after this
+    // call. Without this a later screen would read the field's heap buffer.
     SetRenderExpansionAllowed(FALSE);
+    for (u32 i = 0; i < 4; i++)
+        gBgExt[i].map = NULL;
 
     int i;
     u8 bg;
@@ -897,6 +900,12 @@ void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
 void CopyBgTilemapBufferToVram(u8 bg)
 {
     u16 sizeToLoad;
+
+    // A port-extended BG is read out of its heap buffer directly, so there is
+    // nothing to copy -- and its tilemap is far larger than the screenblocks
+    // BGCNT could address anyway.
+    if (bg < 4 && gBgExt[bg].map != NULL)
+        return;
 
     if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
     {

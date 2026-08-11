@@ -66,7 +66,6 @@ static int sTextureW, sTextureH;
 // ever stretched. A bigger window buys a bigger viewport, not bigger pixels.
 // Scale is capped so the viewport can never be smaller than the vanilla
 // 240x160 -- you get the vanilla view or more of the world, never less.
-static int sPixelScale = 0;   // 0 = auto (largest that still fits 240x160)
 
 static void UpdateViewport(void)
 {
@@ -80,9 +79,9 @@ static void UpdateViewport(void)
     if (vMax < maxScale) maxScale = vMax;
     if (maxScale < 1) maxScale = 1;
 
-    int scale = sPixelScale > 0 ? sPixelScale : maxScale;
-    if (scale > maxScale) scale = maxScale;   // never zoom past vanilla framing
-    if (scale < 1) scale = 1;
+    // Vanilla pixel size is whatever integer scale fits 240x160 in the window;
+    // the space that would have been letterboxed is filled with more map.
+    int scale = maxScale;
 
     SetRenderSize(winW / scale, winH / scale);
 
@@ -109,8 +108,6 @@ static void UpdateViewport(void)
                                      SDL_LOGICAL_PRESENTATION_LETTERBOX);
 }
 
-void Platform_SetPixelScale(int scale) { sPixelScale = scale; UpdateViewport(); }
-int  Platform_GetPixelScale(void)      { return sPixelScale; }
 
 bool speedUp = false;
 unsigned int videoScale = 1;
@@ -1110,7 +1107,7 @@ void VDraw(SDL_Texture *texture)
 {
     // Sized for the largest viewport; only gRenderWidth x gRenderHeight of it
     // is used on any given frame.
-    static uint16_t image[512 * 512];
+    static uint16_t image[2048 * 2048];   // RENDER_MAX_WIDTH/HEIGHT
 
     memset(image, 0, (size_t)gRenderWidth * gRenderHeight * sizeof(uint16_t));
     DrawFrame(image);
