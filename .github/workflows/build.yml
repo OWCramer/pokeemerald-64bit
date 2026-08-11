@@ -342,7 +342,16 @@ jobs:
           done
 
       - name: Build APK
-        run: cd android && ./gradlew assembleRelease --console=plain
+        run: |
+          # Tag builds (refs/tags/vX.Y.Z) carry the release version; anything
+          # else is an untagged CI build and stays at 0.0.0 so it can't be
+          # mistaken for a release.
+          VERSION_NAME="0.0.0"
+          case "$GITHUB_REF" in
+            refs/tags/v*) VERSION_NAME="${GITHUB_REF_NAME#v}" ;;
+          esac
+          cd android && ./gradlew assembleRelease --console=plain \
+            -PversionName="$VERSION_NAME"
 
       # Sign with the release keystore held in repo secrets, so every build shares
       # one signature and releases update in place (and keep their save). Pull

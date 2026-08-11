@@ -241,7 +241,13 @@ ifeq ($(ANDROID),1)
   PATH_MODERNCC := $(ANDROID_CC)
   CC1 := $(ANDROID_CC)
 endif
+# -fsigned-char: the decompiled source relies on `char` being signed (as it is
+# on x86_64 and on Apple's arm64 ABI, the platforms this has run on). Linux and
+# Android arm64 default `char` to UNSIGNED, which silently breaks signed-char
+# comparisons -- e.g. the renderer hung on the first frame on an Android phone,
+# black screen. Pin it signed everywhere so every target matches.
 override CFLAGS += -Wno-trigraphs -Wparentheses -std=gnu99 -fno-builtin -Wno-unused-function \
+                   -fsigned-char \
                    -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN) $(SDL_CFLAGS)
 ifeq ($(ANDROID),1)
   override CFLAGS += -fPIC
