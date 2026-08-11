@@ -38,13 +38,12 @@ ifeq ($(IOS),1)
   # part of the build and silently lands on the host target otherwise.
   IOS_TARGET_FLAGS := -target $(IOS_TRIPLE) -isysroot $(IOS_SYSROOT)
 endif
-# Android is ELF/arm64 or x86_64 with mandatory PIE, so it reuses the NATIVE64
-# anchor-offset pointer scheme (NOT the Linux -no-pie absolute one). It differs
-# from iOS only in object format: ELF has no Mach-O SUBTRACTOR relocation to
-# emit the 4-byte "target - gScriptBase" script-pointer offsets, so those are
-# emitted as absolute (like the Linux build) and rewritten to offsets after the
-# link by tools/elf_script_rebase.py. Everything else -- the .quad widening for
-# 8-byte pointers, the read-time rebasing in global.h -- is shared with iOS/macOS.
+# Android is ELF/arm64 or x86_64 with mandatory PIE. It uses the same uniform
+# self-relative pointer scheme as every other 64-bit target: 4-byte script
+# pointers are emitted as `.long (target - .)` (an offset from their own slot,
+# see docs/POINTER_MIGRATION.md), folded to a constant under -Bsymbolic with no
+# dynamic relocation and no post-link patcher. It differs from iOS/macOS only in
+# object format (ELF vs Mach-O) and link mode (.so vs alias-list).
 ifneq (,$(filter android,$(MAKECMDGOALS)))
   NATIVE64 := 1
   ANDROID := 1
@@ -191,14 +190,11 @@ endif
 	-e 's/^\([[:space:]]*\)\.align[[:space:]]\{1,\}2[[:space:]]*$$/\1.balign 8/'
   MACHO_SYMS := | python3 tools/mach_o_symbols.py
   else ifeq ($(ANDROID),1)
-  # Android is PIE ELF. 8-byte pointers relocate normally, but 4-byte script
-  # pointers can be neither absolute (no R_*_32 in a .so) nor a link-time
-  # symbol-difference (ELF has no SUBTRACTOR). Each is routed through the `sptr`
-  # macro (defined in ASM_DEFSYMS below): it stores a PC-relative offset -- which
-  # folds to a constant under -Bsymbolic with no dynamic relocation -- and records
-  # the slot address in the .emerald_sptr table. tools/elf_script_rebase.py then
-  # rewrites every recorded slot from PC-relative to gScriptBase-relative after
-  # the link, so the read-time macros in global.h reconstruct the PIE address.
+  # Android is PIE ELF. Same self-relative pointers as everyone else: 4-byte
+  # script pointers become `.long (target - .)`, which folds to a constant under
+  # -Bsymbolic with no dynamic relocation. The only Android-specific rule is
+  # redirecting .rodata to .data.rel.ro so the 8-byte .quad pointers' RELATIVE
+  # relocations don't create text relocations, which Android's loader rejects.
   ASM_PSEUDO_OP_CONV := sed \
 	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -228,20 +224,6 @@ endif
   # absolute. Give them their charmap byte pairs as values -- distinct, and
   # above the 0..255 range the macro's .else branch emits directly.
   ASM_DEFSYMS := printf '\t.set PORTABLE_ASM, 1\n\t.set PORTABLE, 1\n\t.set MODERN, 1\n\t.set UBFIX, 1\n\t.set ELF_BUILD, $(ELF_BUILD)\n\t.set STR_VAR_1, 0xFD02\n\t.set STR_VAR_2, 0xFD03\n\t.set STR_VAR_3, 0xFD04\n';
-  # sptr: how a 4-byte script pointer to a symbol is emitted on the ELF builds.
-  # The asm macros' `.if ELF_BUILD` branch and the data-script sed both route
-  # through it (macOS uses the `.else`/SUBTRACTOR branch and never calls sptr).
-  #   Linux (-no-pie): a plain absolute .long, exactly as before.
-  #   Android (PIE):   a PC-relative offset at the slot (labelled 999) plus the
-  #                    slot address recorded in .emerald_sptr for the post-link
-  #                    patcher. Spaces, not tabs, so \t is the macro arg.
-  ifeq ($(ELF_BUILD),1)
-    ifeq ($(ANDROID),1)
-      ASM_DEFSYMS := $(ASM_DEFSYMS) printf '.macro sptr t\n999: .long \\t - 999b\n .pushsection .emerald_sptr,"aw"\n .quad 999b\n .popsection\n.endm\n';
-    else
-      ASM_DEFSYMS := $(ASM_DEFSYMS) printf '.macro sptr t\n .long \\t\n.endm\n';
-    endif
-  endif
   FIX_UNDERSCORE := true
   PLATFORM_INCLUDES :=
   # clang's integrated assembler replaces GNU as.
@@ -811,15 +793,13 @@ $(ROM): $(OBJS)
 	@bash tools/gen_macho_aliases.sh $(OBJ_DIR)/macho_aliases.txt $^
 	$(MODERNCC) $(CFLAGS) $^ $(SDL_LDFLAGS) -Wl,-alias_list,$(OBJ_DIR)/macho_aliases.txt -o $@
 else ifeq ($(ANDROID),1)
-# Android: link the game as libmain.so (SDLActivity dlopen's it). -z notext
-# allows the 4-byte absolute script-pointer relocations to survive the link;
-# elf_script_rebase.py then rewrites those slots to gScriptBase-relative offsets
-# and strips their dynamic relocations, so the read-time rebasing in global.h
-# reconstructs the correct PIE address. Stage both libs into jniLibs for Gradle.
+# Android: link the game as libmain.so (SDLActivity dlopen's it). -Bsymbolic lets
+# the self-relative `target - .` references to global symbols fold to constants
+# at link time (no dynamic relocation, no post-link patcher). Stage both libs
+# into jniLibs for Gradle.
 $(ROM): $(OBJS)
 	@mkdir -p $(ANDROID_JNILIBS)
 	$(ANDROID_CC) $(CFLAGS) -shared -fPIC $^ $(SDL_LDFLAGS) -Wl,-Bsymbolic -o $@
-	python3 tools/elf_script_rebase.py $@
 	cp -f $(ANDROID_SDL)/b-$(ANDROID_ABI)/libSDL3.so $(ANDROID_JNILIBS)/libSDL3.so
 else
 # No alias list: on ELF the bare names the assembly uses are the names C

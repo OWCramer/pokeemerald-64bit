@@ -149,23 +149,6 @@ extern const u8 gScriptBase[];
 // in InsideOfTruck_EventScript_SetIntroFlags it read 0x01800d21, the bytes of
 // the next `compare`, instead of 0x1cdb4a -- so no script with a pointer
 // operand could work.
-static inline u8 *ScriptRebase(u32 v)
-{
-    // The anchor must be opaque to the optimizer. gScriptBase is defined as
-    // `const u8 gScriptBase[1] = {0}` in src/script.c, so within that
-    // translation unit the compiler can see the whole object: every rebased
-    // address is provably outside a one-byte array, which is undefined
-    // behaviour it may exploit. It folded reads through rebased pointers to the
-    // array's known zero contents, which made the first read in
-    // MapHeaderCheckScriptTable always zero, so the function always returned
-    // NULL and its entire loop body was deleted as dead code -- no map ever ran
-    // its ON_FRAME_TABLE scripts. This barrier launders the pointer so no size
-    // or contents assumption survives.
-    const u8 *base = gScriptBase;
-    __asm__("" : "+r"(base));
-    return (s32)v ? (u8 *)(uintptr_t)base + (s32)v : (u8 *)0;
-}
-#define SCRIPT_REBASE(v) ScriptRebase(v)
 // Self-relative pointer read: the 4-byte slot holds (target - slot), so the real
 // pointer is slot + offset. 0 is the NULL sentinel (a real pointer never targets
 // its own slot). Uniform on every 64-bit host -- no anchor.
@@ -191,7 +174,6 @@ static inline void *T2ReadPtr(const u8 *ptr)
 }
 #define T2_READ_PTR(ptr) T2ReadPtr((const u8 *)(ptr))
 #else
-#define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
 #endif
 
@@ -240,12 +222,11 @@ static inline void *PtrRebase32(u32 v)
 // pointer fits in 32 bits: a stored value is already the whole address and
 // needs no anchor. macOS/arm64 cannot do this -- PIE is mandatory there and
 // -image_base is ignored -- which is the only reason the offset scheme exists.
-// T1_READ_PTR / T2_READ_PTR are now self-relative and uniform (defined above);
-// PORTABLE_ELF no longer overrides them. SCRIPT_REBASE / PTR_REBASE32 remain
-// forked here until they are removed (see docs/POINTER_MIGRATION.md phases 5-6).
-#undef SCRIPT_REBASE
+// T1_READ_PTR / T2_READ_PTR are self-relative and uniform (defined above), so
+// PORTABLE_ELF no longer overrides them. PTR_REBASE32 -- the separate task/sprite
+// split-pointer path -- is still forked here (see docs/POINTER_MIGRATION.md
+// phase 6).
 #undef PTR_REBASE32
-#define SCRIPT_REBASE(v) ((u8 *)(uintptr_t)(v))
 #define PTR_REBASE32(v)  ((void *)(uintptr_t)(v))
 #endif
 
