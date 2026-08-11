@@ -2063,7 +2063,7 @@ static void DrawSpritesWinMask(struct scanlineData* scanline, int vcount)
     }
 }
 
-static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* scanline, uint16_t vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn)
+static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn)
 {
     struct OamData *oam = &((struct OamData *)OAM)[SpriteIndex];
     void *objtiles = VRAM_ + 0x10000;
@@ -2282,7 +2282,7 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
     }
 }
 
-static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData* scanline, uint16_t vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn)
+static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn)
 {
     struct OamData *oam = &((struct OamData *)OAM)[SpriteIndex];
     void *objtiles = VRAM_ + 0x10000;
@@ -2893,6 +2893,7 @@ void DrawFrame(uint16_t *pixels)
 {
     int i;
     int j;
+
 
     
     //memsetu16(pixels, *(uint16_t *)PLTT, DISPLAY_WIDTH * DISPLAY_HEIGHT);
