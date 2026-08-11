@@ -7,10 +7,10 @@ plugins {
 }
 
 android {
-    namespace = "com.pokeemerald"
+    namespace = "com.owcramer.pokeemerald"
     compileSdk 35
     defaultConfig {
-        applicationId "com.pokeemerald"
+        applicationId "com.owcramer.pokeemerald"
         minSdkVersion 21
         targetSdkVersion 35
         versionCode 1

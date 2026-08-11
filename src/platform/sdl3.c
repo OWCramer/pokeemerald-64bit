@@ -64,6 +64,18 @@ static SDL_AudioStream *sAudioStream;
 static jmp_buf sResetJmp;
 static SDL_AtomicInt sResetRequested;
 static SDL_Gamepad *sGamepad;
+#if MOBILE
+// The on-screen touch overlay is exposed to SDL as a virtual gamepad, so a tap
+// arrives as an ordinary SDL_EVENT_GAMEPAD_BUTTON that the whole input path
+// already understands: it flows through the rebindable binding table
+// (GamepadKeys), the game sees a controller present, and the controls menu can
+// capture it during a rebind -- none of which a raw finger event does.
+// sTouchPadJoy sets the virtual buttons; sTouchPad is the gamepad view read for
+// held input; sTouchPadId tells its events apart from a real controller's.
+static SDL_JoystickID sTouchPadId;
+static SDL_Joystick *sTouchPadJoy;
+static SDL_Gamepad *sTouchPad;
+#endif
 // The framebuffer is ABGR1555 -- the GBA's own BGR555 order. No hardware
 // renderer on iOS accepts it: Metal and GLES take ARGB1555 (R and B swapped)
 // but not this. When the native format is refused we upload through a swizzle
@@ -207,8 +219,11 @@ static void UpdateInternalClock(void);
 static void OpenAudio(void);
 static void OpenFirstGamepad(void);
 static void DrawTouchOverlay(void);
-static u16 TouchKeys(void);
 static u16 GamepadKeys(void);
+#if MOBILE
+static void AttachTouchPad(void);
+static void DetachTouchPad(void);
+#endif
 
 int main(int argc, char **argv)
 {
@@ -231,8 +246,13 @@ int main(int argc, char **argv)
     }
 
 #if MOBILE
-    // The GBA screen is 3:2 landscape; portrait would waste most of the display.
-    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    // Allow both orientations. The expanded field viewport fills whatever aspect
+    // the window is (UpdateViewport), so portrait shows more of the map vertically
+    // rather than wasting the display, and the touch pad has a portrait layout
+    // (see sTouchButtons / DrawTouchOverlay). The window follows the device; the
+    // per-frame OutputSize() read keeps the render and pad in step on rotation.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS,
+                "LandscapeLeft LandscapeRight Portrait PortraitUpsideDown");
 #endif
 
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
@@ -292,6 +312,11 @@ int main(int argc, char **argv)
 
     UpdateViewport();
     OpenAudio();
+#if MOBILE
+    // Register the on-screen pad as a virtual controller before scanning for a
+    // real one, so OpenFirstGamepad can tell them apart.
+    AttachTouchPad();
+#endif
     OpenFirstGamepad();
 
     VDraw(sdlTexture);
@@ -315,7 +340,12 @@ int main(int argc, char **argv)
 
             curGameTime = SDL_GetPerformanceCounter();
             double deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());
-            if (deltaTime > (dt * 5))
+            // Cap catch-up to avoid a spiral of death after a real stall (the app
+            // was backgrounded, a GC paused us). The cap is in REAL time and must
+            // NOT scale with timeScale: `dt * 5` collapses to one 60Hz frame
+            // (~16.6ms) under 5x fast-forward, so a vsync'd present landing a hair
+            // over budget clamped every frame and quietly forced FF back to 1x.
+            if (deltaTime > (fixedTimestep * 5))
                 deltaTime = dt;
             lastGameTime = curGameTime;
 
@@ -328,7 +358,6 @@ int main(int argc, char **argv)
                     VDraw(sdlTexture);
                     SDL_RenderClear(sdlRenderer);
                     SDL_RenderTexture(sdlRenderer, sdlTexture, NULL, NULL);
-                    DrawTouchOverlay();
                     didRender = TRUE;
                     SDL_SetAtomicInt(&isFrameAvailable, 0);
 
@@ -350,9 +379,17 @@ int main(int argc, char **argv)
         // Only present frames that were actually drawn. This loop spins faster
         // than the emulated 60Hz, and presenting on an iteration where nothing
         // was copied swaps in an undrawn back buffer -- a black flicker every
-        // few frames.
+        // few frames. Draw the touch overlay here, once per presented frame,
+        // rather than inside the emulation loop above: only the final sub-frame
+        // is ever shown, and the overlay toggles the renderer's logical
+        // presentation, so drawing it per sub-frame thrashed that state ~5x per
+        // frame under fast-forward -- stalling the main thread enough to glitch
+        // audio and drop the speed-up.
         if (didRender)
+        {
+            DrawTouchOverlay();
             SDL_RenderPresent(sdlRenderer);
+        }
         else
             SDL_Delay(1);
     }
@@ -362,6 +399,9 @@ int main(int argc, char **argv)
 
     if (sGamepad)
         SDL_CloseGamepad(sGamepad);
+#if MOBILE
+    DetachTouchPad();
+#endif
     SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
     return 0;
@@ -526,9 +566,9 @@ struct GbaBinding
     { DPAD_DOWN, HOST_NONE,     "DOWN",   SDLK_DOWN, 0,      SDL_GAMEPAD_BUTTON_DPAD_DOWN }, \
     { DPAD_LEFT, HOST_NONE,     "LEFT",   SDLK_LEFT, 0,      SDL_GAMEPAD_BUTTON_DPAD_LEFT }, \
     { DPAD_RIGHT, HOST_NONE,    "RIGHT",  SDLK_RIGHT, 0,     SDL_GAMEPAD_BUTTON_DPAD_RIGHT }, \
-    { 0, HOST_FASTFORWARD,      "FAST FWD", SDLK_SPACE, 0,              -1 }, \
+    { 0, HOST_FASTFORWARD,      "FAST FWD", SDLK_SPACE, 0,              SDL_GAMEPAD_BUTTON_RIGHT_STICK }, \
     { 0, HOST_SOFTRESET,        "RESET",    SDLK_R,     SDL_KMOD_LCTRL, -1 }, \
-    { 0, HOST_PAUSE,            "PAUSE",    SDLK_P,     SDL_KMOD_LCTRL, -1 }, \
+    { 0, HOST_PAUSE,            "PAUSE",    SDLK_P,     SDL_KMOD_LCTRL, SDL_GAMEPAD_BUTTON_LEFT_STICK }, \
 }
 
 static struct GbaBinding sBindings[] = DEFAULT_BINDINGS;
@@ -805,18 +845,34 @@ void Platform_GetBindLabel(u8 i, char *out, int outSize)
 // live in different spaces. `half` is a fraction of the logical *height* for
 // both axes so buttons stay square; the presentation preserves aspect, so
 // square here is square on screen.
-struct TouchButton { float cx, cy, half; u16 key; };
+// `key` is the GBA button this pad is drawn for (0 for an emulator function);
+// `pad` is the SDL_GamepadButton it presses on the virtual controller (see
+// AttachTouchPad). The pad values mirror the default bindings, so out of the box
+// a tap resolves through the ordinary binding table -- to a GBA key, or, for the
+// two top buttons, to the HOST_PAUSE / HOST_FASTFORWARD emulator actions. `icon`
+// draws a glyph on the emulator-function buttons since they have no GBA label.
+enum { TB_ICON_NONE, TB_ICON_PAUSE, TB_ICON_FF };
+// cx/cy are the landscape centre (fractions of the window); pcx/pcy the portrait
+// centre. Portrait puts the pad in the lower half (thumbs reach the bottom) with
+// the game filling above it. `half` is a fraction of the SHORT window side, so a
+// button is the same physical size in either orientation. See DrawTouchOverlay.
+struct TouchButton { float cx, cy, pcx, pcy, half; u16 key; int pad; int icon; };
 static const struct TouchButton sTouchButtons[] = {
-    { 0.080f, 0.55f, 0.060f, DPAD_LEFT  },
-    { 0.200f, 0.55f, 0.060f, DPAD_RIGHT },
-    { 0.140f, 0.38f, 0.060f, DPAD_UP    },
-    { 0.140f, 0.72f, 0.060f, DPAD_DOWN  },
-    { 0.930f, 0.52f, 0.070f, A_BUTTON   },
-    { 0.820f, 0.70f, 0.070f, B_BUTTON   },
-    { 0.560f, 0.90f, 0.048f, START_BUTTON  },
-    { 0.440f, 0.90f, 0.048f, SELECT_BUTTON },
-    { 0.070f, 0.10f, 0.055f, L_BUTTON   },
-    { 0.930f, 0.10f, 0.055f, R_BUTTON   },
+    //  landscape        portrait        half    key            pad                                icon
+    { 0.080f, 0.55f,  0.140f, 0.800f, 0.060f, DPAD_LEFT,     SDL_GAMEPAD_BUTTON_DPAD_LEFT,      TB_ICON_NONE  },
+    { 0.200f, 0.55f,  0.320f, 0.800f, 0.060f, DPAD_RIGHT,    SDL_GAMEPAD_BUTTON_DPAD_RIGHT,     TB_ICON_NONE  },
+    { 0.140f, 0.38f,  0.230f, 0.720f, 0.060f, DPAD_UP,       SDL_GAMEPAD_BUTTON_DPAD_UP,        TB_ICON_NONE  },
+    { 0.140f, 0.72f,  0.230f, 0.880f, 0.060f, DPAD_DOWN,     SDL_GAMEPAD_BUTTON_DPAD_DOWN,      TB_ICON_NONE  },
+    { 0.930f, 0.52f,  0.860f, 0.780f, 0.070f, A_BUTTON,      SDL_GAMEPAD_BUTTON_SOUTH,          TB_ICON_NONE  },
+    { 0.820f, 0.70f,  0.680f, 0.870f, 0.070f, B_BUTTON,      SDL_GAMEPAD_BUTTON_EAST,           TB_ICON_NONE  },
+    { 0.560f, 0.90f,  0.580f, 0.955f, 0.048f, START_BUTTON,  SDL_GAMEPAD_BUTTON_START,          TB_ICON_NONE  },
+    { 0.440f, 0.90f,  0.420f, 0.955f, 0.048f, SELECT_BUTTON, SDL_GAMEPAD_BUTTON_BACK,           TB_ICON_NONE  },
+    { 0.070f, 0.10f,  0.120f, 0.630f, 0.055f, L_BUTTON,      SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,  TB_ICON_NONE  },
+    { 0.930f, 0.10f,  0.880f, 0.630f, 0.055f, R_BUTTON,      SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, TB_ICON_NONE  },
+    // Emulator functions, top of screen. key = 0 (not a GBA button); they resolve
+    // through the binding table to HOST_PAUSE / HOST_FASTFORWARD.
+    { 0.430f, 0.075f, 0.400f, 0.045f, 0.045f, 0, SDL_GAMEPAD_BUTTON_LEFT_STICK,  TB_ICON_PAUSE },
+    { 0.570f, 0.075f, 0.600f, 0.045f, 0.045f, 0, SDL_GAMEPAD_BUTTON_RIGHT_STICK, TB_ICON_FF    },
 };
 #define NUM_TOUCH_BUTTONS ((int)(sizeof(sTouchButtons) / sizeof(sTouchButtons[0])))
 
@@ -861,77 +917,146 @@ static void SetFinger(SDL_FingerID id, float x, float y, bool down)
     }
 }
 
-// SDL_ConvertEventToRenderCoordinates puts touches in the renderer's *logical*
-// space, and our overlay draws into that same space. That is the render size
-// multiplied by the integer scale -- not gRenderWidth -- so ask SDL for it
-// rather than recomputing, and the pad follows whatever presentation
-// UpdateViewport settled on.
-static bool LogicalExtent(float *w, float *h)
+// Physical output size in pixels. The pad is laid out and hit-tested against
+// this, NOT the renderer's logical presentation. The game re-sets the
+// presentation every frame (UpdateViewport) to gRenderWidth*scale, which is the
+// expanded viewport in the overworld but only 240x160 in menus -- so anchoring
+// the pad to it dragged the buttons inward whenever a menu opened. The window
+// drawable never moves, so the pad stays fixed on screen. Finger events already
+// arrive normalized [0,1] to this same window, so the two spaces line up.
+static bool OutputSize(float *w, float *h)
 {
-    int lw = 0, lh = 0;
-    SDL_RendererLogicalPresentation mode;
+    int pw = 0, ph = 0;
 
-    if (sdlRenderer == NULL ||
-        !SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode) ||
-        lw <= 0 || lh <= 0)
+    if (sdlWindow == NULL ||
+        !SDL_GetWindowSizeInPixels(sdlWindow, &pw, &ph) ||
+        pw <= 0 || ph <= 0)
         return false;
 
-    *w = (float)lw;
-    *h = (float)lh;
+    *w = (float)pw;
+    *h = (float)ph;
     return true;
 }
 
-static u16 TouchKeys(void)
+// True if any active finger falls within button t's hit box. Positions are
+// fractions of the window (fingers arrive normalized; buttons are laid out that
+// way); w/h are the output pixel size. Buttons are square and sized by the short
+// side, so their half-extent differs per axis in normalized space. The box is
+// padded outward: thumbs are imprecise and missing a d-pad is far more annoying
+// than an occasional overlap.
+static bool FingerOnButton(const struct TouchButton *t, float w, float h)
 {
-    u16 out = 0;
-    float lw, lh;
-
-    if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
-        return 0;
+    bool portrait = h > w;
+    float shortSide = w < h ? w : h;
+    float halfPx = (t->half + 0.015f) * shortSide;
+    float hx = halfPx / w, hy = halfPx / h;
+    float cx = portrait ? t->pcx : t->cx;
+    float cy = portrait ? t->pcy : t->cy;
 
     for (int f = 0; f < MAX_FINGERS; f++)
     {
-        if (!sFingers[f].active)
-            continue;
-        for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
-        {
-            const struct TouchButton *t = &sTouchButtons[b];
-            // Padded outward; thumbs are imprecise and missing a d-pad is far
-            // more annoying than an occasional overlap.
-            float pad = 0.015f;
-            float hy = t->half + pad;
-            float hx = hy * lh / lw;
-
-            if (SDL_fabsf(sFingers[f].x - t->cx) <= hx &&
-                SDL_fabsf(sFingers[f].y - t->cy) <= hy)
-                out |= t->key;
-        }
+        if (sFingers[f].active &&
+            SDL_fabsf(sFingers[f].x - cx) <= hx &&
+            SDL_fabsf(sFingers[f].y - cy) <= hy)
+            return true;
     }
-    return out;
+    return false;
+}
+
+#if MOBILE
+// Push the current finger-hit state into the virtual gamepad once per frame.
+// SDL turns the changes into ordinary gamepad button events on the next pump,
+// so held input, rebind capture and controller detection all treat touch as a
+// controller. Buttons only count while the overlay is actually shown.
+static void SyncTouchPad(void)
+{
+    float w, h;
+    bool live;
+
+    if (sTouchPadJoy == NULL)
+        return;
+
+    live = ShowTouchOverlay() && OutputSize(&w, &h);
+    for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
+    {
+        const struct TouchButton *t = &sTouchButtons[b];
+        bool down = live && FingerOnButton(t, w, h);
+        SDL_SetJoystickVirtualButton(sTouchPadJoy, t->pad, down);
+    }
+}
+#endif
+
+// A single flat-shaded triangle (SDL has no fill-triangle call). Used for the
+// fast-forward glyph; colour is the same translucent black as the pause bars.
+static void FillTri(float x0, float y0, float x1, float y1, float x2, float y2)
+{
+    SDL_FColor c = { 0.0f, 0.0f, 0.0f, 200.0f / 255.0f };
+    SDL_Vertex v[3] = {
+        { { x0, y0 }, c, { 0, 0 } },
+        { { x1, y1 }, c, { 0, 0 } },
+        { { x2, y2 }, c, { 0, 0 } },
+    };
+    SDL_RenderGeometry(sdlRenderer, NULL, v, 3, NULL, 0);
 }
 
 static void DrawTouchOverlay(void)
 {
     // Shown whenever there is no controller, rather than waiting for a first
     // touch: a pad nobody can see is a pad nobody knows to use.
-    float lw, lh;
+    float outW, outH;
 
-    if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
+    if (!ShowTouchOverlay() || !OutputSize(&outW, &outH))
         return;
 
-    u16 held = TouchKeys();
+    // Draw in raw output pixels, independent of the game's logical presentation
+    // (which shrinks to 240x160 in menus and would drag the pad inward). Disable
+    // the presentation for the overlay, then restore it -- the next frame's
+    // game render re-applies its own via UpdateViewport regardless.
+    int lw, lh;
+    SDL_RendererLogicalPresentation mode;
+    SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode);
+    SDL_SetRenderLogicalPresentation(sdlRenderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+
+    bool portrait = outH > outW;
+    float shortSide = outW < outH ? outW : outH;
+
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
-        float h = t->half * lh;
-        SDL_FRect r = { t->cx * lw - h, t->cy * lh - h, h * 2, h * 2 };
-        bool on = (held & t->key) != 0;
+        float h = t->half * shortSide;
+        float cx = (portrait ? t->pcx : t->cx) * outW;
+        float cy = (portrait ? t->pcy : t->cy) * outH;
+        SDL_FRect r = { cx - h, cy - h, h * 2, h * 2 };
+        bool on = FingerOnButton(t, outW, outH);
 
         SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, on ? 150 : 55);
         SDL_RenderFillRect(sdlRenderer, &r);
         SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 110);
         SDL_RenderRect(sdlRenderer, &r);
+
+        // The GBA buttons are identified by position; the two emulator-function
+        // buttons get a glyph so they are readable.
+        if (t->icon == TB_ICON_PAUSE)
+        {
+            float bw = h * 0.22f, bh = h * 0.85f, gap = h * 0.14f;
+            SDL_FRect p1 = { cx - gap - bw, cy - bh * 0.5f, bw, bh };
+            SDL_FRect p2 = { cx + gap,       cy - bh * 0.5f, bw, bh };
+            SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 200);
+            SDL_RenderFillRect(sdlRenderer, &p1);
+            SDL_RenderFillRect(sdlRenderer, &p2);
+        }
+        else if (t->icon == TB_ICON_FF)
+        {
+            float tw = h * 0.55f, th = h * 0.80f;
+            float top = cy - th * 0.5f, bot = cy + th * 0.5f;
+            float bx = cx - tw * 0.75f;
+            FillTri(bx, top, bx, bot, bx + tw, cy);       // first  >
+            bx += tw * 0.7f;
+            FillTri(bx, top, bx, bot, bx + tw, cy);       // second >
+        }
     }
+
+    SDL_SetRenderLogicalPresentation(sdlRenderer, lw, lh, mode);
     SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
 }
 
@@ -941,35 +1066,88 @@ static void OpenFirstGamepad(void)
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     if (ids)
     {
-        if (count > 0 && sGamepad == NULL)
-            sGamepad = SDL_OpenGamepad(ids[0]);
+        for (int i = 0; i < count && sGamepad == NULL; i++)
+        {
+#if MOBILE
+            // The on-screen pad is a gamepad too; never adopt it as the "real"
+            // controller, or GamepadKeys would read it twice and touching it
+            // would hide its own overlay.
+            if (ids[i] == sTouchPadId)
+                continue;
+#endif
+            sGamepad = SDL_OpenGamepad(ids[i]);
+        }
         SDL_free(ids);
     }
 }
 
-static u16 GamepadKeys(void)
+#if MOBILE
+static void AttachTouchPad(void)
 {
-    if (sGamepad == NULL)
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    // Buttons 0..DPAD_RIGHT, all present and contiguous from zero. SDL maps the
+    // Nth set mask bit to raw virtual-button N, so a contiguous-from-zero mask
+    // keeps a virtual-button index equal to its SDL_GamepadButton value -- which
+    // is what SyncTouchPad relies on when it passes t->pad straight through.
+    desc.nbuttons = SDL_GAMEPAD_BUTTON_DPAD_RIGHT + 1;
+    desc.button_mask = (1u << (SDL_GAMEPAD_BUTTON_DPAD_RIGHT + 1)) - 1;
+    desc.name = "On-Screen Touch Controls";
+
+    sTouchPadId = SDL_AttachVirtualJoystick(&desc);
+    if (sTouchPadId == 0)
+        return;
+    // Open both views now rather than waiting for SDL_EVENT_GAMEPAD_ADDED: the
+    // joystick handle sets the virtual buttons, the gamepad handle is read by
+    // GamepadKeys, and opening here keeps OpenFirstGamepad from grabbing it.
+    sTouchPadJoy = SDL_OpenJoystick(sTouchPadId);
+    sTouchPad = SDL_OpenGamepad(sTouchPadId);
+}
+
+static void DetachTouchPad(void)
+{
+    if (sTouchPad) { SDL_CloseGamepad(sTouchPad); sTouchPad = NULL; }
+    if (sTouchPadJoy) { SDL_CloseJoystick(sTouchPadJoy); sTouchPadJoy = NULL; }
+    if (sTouchPadId) { SDL_DetachVirtualJoystick(sTouchPadId); sTouchPadId = 0; }
+}
+#endif
+
+static u16 ReadGamepad(SDL_Gamepad *gp)
+{
+    if (gp == NULL)
         return 0;
 
     u16 out = 0;
     for (int i = 0; i < NUM_BINDINGS; i++)
     {
         if (sBindings[i].gbaKey != 0 && sBindings[i].pad >= 0
-         && SDL_GetGamepadButton(sGamepad, (SDL_GamepadButton)sBindings[i].pad))
+         && SDL_GetGamepadButton(gp, (SDL_GamepadButton)sBindings[i].pad))
             out |= sBindings[i].gbaKey;
     }
 
     // Analog stick as a d-pad, always on: MFi d-pads vary in quality and the
-    // small clip-on controllers are much easier to use on stick.
+    // small clip-on controllers are much easier to use on stick. (The virtual
+    // touch pad has no axes, so this is a no-op for it.)
     const Sint16 dead = 12000;
-    Sint16 ax = SDL_GetGamepadAxis(sGamepad, SDL_GAMEPAD_AXIS_LEFTX);
-    Sint16 ay = SDL_GetGamepadAxis(sGamepad, SDL_GAMEPAD_AXIS_LEFTY);
+    Sint16 ax = SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTX);
+    Sint16 ay = SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTY);
     if (ax < -dead) out |= DPAD_LEFT;
     if (ax >  dead) out |= DPAD_RIGHT;
     if (ay < -dead) out |= DPAD_UP;
     if (ay >  dead) out |= DPAD_DOWN;
 
+    return out;
+}
+
+// A real controller and the on-screen touch pad are read the same way and OR'd
+// together, so both work at once and both honour the rebindable binding table.
+static u16 GamepadKeys(void)
+{
+    u16 out = ReadGamepad(sGamepad);
+#if MOBILE
+    out |= ReadGamepad(sTouchPad);
+#endif
     return out;
 }
 
@@ -979,8 +1157,9 @@ u16 Platform_GetKeyInput(void)
     if (SDL_GetAtomicInt(&sRebindIndex) >= 0)
         return 0;
     // While the conflict prompt is up the game still needs A/B, so input is
-    // NOT frozen here -- only during capture itself.
-    return keys | GamepadKeys() | TouchKeys();
+    // NOT frozen here -- only during capture itself. Touch is folded into
+    // GamepadKeys via the virtual pad, so it needs no separate term here.
+    return keys | GamepadKeys();
 }
 
 void ProcessEvents(void)
@@ -989,10 +1168,6 @@ void ProcessEvents(void)
 
     while (SDL_PollEvent(&event))
     {
-        // Touch and mouse arrive in window coordinates; this rewrites them into
-        // the 240x160 logical space, which is where the pad is laid out.
-        SDL_ConvertEventToRenderCoordinates(sdlRenderer, &event);
-
         switch (event.type)
         {
         case SDL_EVENT_QUIT:
@@ -1064,7 +1239,15 @@ void ProcessEvents(void)
         case SDL_EVENT_GAMEPAD_BUTTON_UP:
         {
             bool8 down = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
-            if (down)
+#if MOBILE
+            // A press on the virtual pad IS a touch: it must not flip sPadActive
+            // (that would hide the overlay being pressed), but it still drives
+            // rebind capture and edge-triggered actions below.
+            bool8 isTouch = (event.gbutton.which == sTouchPadId);
+#else
+            bool8 isTouch = FALSE;
+#endif
+            if (down && !isTouch)
                 sPadActive = true;
             if (down && SDL_GetAtomicInt(&sRebindIndex) >= 0)
             {
@@ -1090,17 +1273,22 @@ void ProcessEvents(void)
         case SDL_EVENT_FINGER_UP:
         case SDL_EVENT_FINGER_CANCELED:
         {
-            float lw, lh;
             bool down = (event.type == SDL_EVENT_FINGER_DOWN ||
                          event.type == SDL_EVENT_FINGER_MOTION);
 
-            if (LogicalExtent(&lw, &lh))
-                SetFinger(event.tfinger.fingerID, event.tfinger.x / lw,
-                          event.tfinger.y / lh, down);
+            // tfinger.x/y are normalized [0,1] to the window -- a stable space
+            // that does not move with the game's logical presentation, and the
+            // same space the pad is laid out in. Store them directly.
+            SetFinger(event.tfinger.fingerID, event.tfinger.x, event.tfinger.y, down);
             break;
         }
 
         case SDL_EVENT_GAMEPAD_ADDED:
+#if MOBILE
+            // The virtual touch pad is opened explicitly in AttachTouchPad.
+            if (event.gdevice.which == sTouchPadId)
+                break;
+#endif
             if (sGamepad == NULL)
                 sGamepad = SDL_OpenGamepad(event.gdevice.which);
             break;
@@ -1134,6 +1322,12 @@ void ProcessEvents(void)
             break;
         }
     }
+
+#if MOBILE
+    // Reflect this frame's finger state onto the virtual pad; SDL turns the
+    // changes into gamepad button events on the next pump.
+    SyncTouchPad();
+#endif
 }
 
 // ---------------------------------------------------------------- saves

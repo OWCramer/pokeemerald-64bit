@@ -15,14 +15,15 @@
 
     <application android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="true"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true" >
 
         <!-- SDLActivity's default getLibraries() loads SDL3 then "main" (our
              libmain.so), and getMainFunction() returns "SDL_main". Fully
-             qualified because this app's namespace is com.pokeemerald, not
-             org.libsdl.app. -->
+             qualified because this app's namespace is com.owcramer.pokeemerald,
+             not org.libsdl.app. -->
         <activity android:name="org.libsdl.app.SDLActivity"
             android:label="@string/app_name"
             android:alwaysRetainTaskState="true"

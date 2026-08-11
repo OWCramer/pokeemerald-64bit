@@ -87,3 +87,7 @@ xcuserdata/
 # The make-built iOS binary the Xcode target installs into its bundle.
 /pokeemerald-ios
 
+
+# signing keys must never be committed (they live in CI secrets)
+*.keystore
+*.jks
