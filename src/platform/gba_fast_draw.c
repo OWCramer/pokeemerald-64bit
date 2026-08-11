@@ -1942,10 +1942,8 @@ static void DrawSpritesWinMask(struct scanlineData* scanline, int vcount)
         int32_t x = (int32_t)oam->x;
         int32_t y = (int32_t)oam->y;
 
-        if (x >= DISPLAY_WIDTH)
-            x -= 512;
-        if (y >= DISPLAY_HEIGHT)
-            y -= 256;
+
+
 
         // Shift into the viewport horizontally only: the scanline number passed
         // to the sprite routines is already a GBA line, so the vertical shift is
@@ -2112,10 +2110,8 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
     int32_t x = (int32_t)oam->x;
     int32_t y = (int32_t)oam->y;
 
-    if (x >= DISPLAY_WIDTH)
-        x -= 512;
-    if (y >= DISPLAY_HEIGHT)
-        y -= 256;
+
+
 
     // Horizontal only -- see the note above; vcount already carries the
     // vertical shift.
@@ -2328,10 +2324,8 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
     int32_t x = (int32_t)oam->x;
     int32_t y = (int32_t)oam->y;
 
-    if (x >= DISPLAY_WIDTH)
-        x -= 512;
-    if (y >= DISPLAY_HEIGHT)
-        y -= 256;
+
+
 
     // Horizontal only -- see the note above; vcount already carries the
     // vertical shift.
@@ -2382,7 +2376,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                     if (blendMode != 0 || isSemiTransparent) //Windowing and blending
                     {
                         #define writeSpritePixelWinBlend(pixel, x) \
-                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_OBJ))) { \
+                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
                                 uint16_t color = palette[pixel]; \
                                 winShouldBlendPixel = (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_CLR); \
                                 \
@@ -2434,7 +2428,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                     else //Windowing
                     {
                         #define writeSpritePixelWin(pixel, x) \
-                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_OBJ))) { \
+                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
                                 pixels[x] = palette[pixel] | (1 << 15); \
                                 scanline->bgMask[x] = (1 << 4); \
                             }
@@ -2556,7 +2550,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
             {
                 bool winShouldDraw = true;
                 #define writeSpritePixel(pixel, x) \
-                    winShouldDraw = windowsEnabled == false || ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_OBJ));\
+                    winShouldDraw = windowsEnabled == false || ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)));\
                     if (pixel && winShouldDraw) { \
                         uint16_t color = palette[pixel]; \
                         \

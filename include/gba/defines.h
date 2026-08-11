@@ -88,7 +88,9 @@ extern unsigned char VRAM_[VRAM_SIZE] __attribute__ ((aligned (4)));
 #define OBJ_VRAM1      (VRAM + 0x14000)
 #define OBJ_VRAM1_SIZE 0x4000
 
-#define OAM_SIZE 0x400
+// 128 entries of the widened struct OamData (12 bytes each) rather than the
+// hardware's 8.
+#define OAM_SIZE (128 * 12)
 #ifndef PORTABLE
 #define OAM      0x7000000
 #else

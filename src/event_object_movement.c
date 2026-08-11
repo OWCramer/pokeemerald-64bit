@@ -7372,11 +7372,29 @@ static void UpdateObjectEventOffscreen(struct ObjectEvent *objectEvent, struct S
     y2 = y;
     y2 += graphicsInfo->height;
 
-    if ((s16)x >= DISPLAY_WIDTH + 16 || (s16)x2 < -16)
-        objectEvent->offScreen = TRUE;
+    // Widened by the viewport expansion: these are GBA screen coordinates, and
+    // the expanded view spans -gRenderOffset .. DISPLAY + gRenderOffset. Culling
+    // at the vanilla bounds is what made NPCs pop in at the edge of the old
+    // 240x160 area however far the viewport reached.
+    //
+    // Only for objects belonging to the map the player is on. An object that
+    // survived a connection transition keeps the sprite position it had on its
+    // own map -- sprite->x is only re-derived from map coordinates on an
+    // explicit teleport, never on a camera transition -- so showing it beyond
+    // the vanilla view draws it in the wrong place. Vanilla never had to get
+    // that right because everything out there was hidden.
+    {
+        bool32 ownMap = (objectEvent->mapNum == gSaveBlock1Ptr->location.mapNum
+                      && objectEvent->mapGroup == gSaveBlock1Ptr->location.mapGroup);
+        s16 padX = ownMap ? gRenderOffsetX : 0;
+        s16 padY = ownMap ? gRenderOffsetY : 0;
 
-    if ((s16)y >= DISPLAY_HEIGHT + 16 || (s16)y2 < -16)
-        objectEvent->offScreen = TRUE;
+        if ((s16)x >= DISPLAY_WIDTH + 16 + padX || (s16)x2 < -16 - padX)
+            objectEvent->offScreen = TRUE;
+
+        if ((s16)y >= DISPLAY_HEIGHT + 16 + padY || (s16)y2 < -16 - padY)
+            objectEvent->offScreen = TRUE;
+    }
 }
 
 static void UpdateObjectEventSpriteVisibility(struct ObjectEvent *objectEvent, struct Sprite *sprite)
@@ -8578,9 +8596,9 @@ void UpdateObjectEventSpriteInvisibility(struct Sprite *sprite, bool8 invisible)
     x2 = x - (sprite->centerToCornerVecX >> 1);
     y2 = y - (sprite->centerToCornerVecY >> 1);
 
-    if ((s16)x >= DISPLAY_WIDTH + 16 || x2 < -16)
+    if ((s16)x >= DISPLAY_WIDTH + 16 + gRenderOffsetX || x2 < -16 - gRenderOffsetX)
         sprite->invisible = TRUE;
-    if ((s16)y >= DISPLAY_HEIGHT + 16 || y2 < -16)
+    if ((s16)y >= DISPLAY_HEIGHT + 16 + gRenderOffsetY || y2 < -16 - gRenderOffsetY)
         sprite->invisible = TRUE;
 }
 
