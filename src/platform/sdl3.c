@@ -246,8 +246,13 @@ int main(int argc, char **argv)
     }
 
 #if MOBILE
-    // The GBA screen is 3:2 landscape; portrait would waste most of the display.
-    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    // Allow both orientations. The expanded field viewport fills whatever aspect
+    // the window is (UpdateViewport), so portrait shows more of the map vertically
+    // rather than wasting the display, and the touch pad has a portrait layout
+    // (see sTouchButtons / DrawTouchOverlay). The window follows the device; the
+    // per-frame OutputSize() read keeps the render and pad in step on rotation.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS,
+                "LandscapeLeft LandscapeRight Portrait PortraitUpsideDown");
 #endif
 
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
@@ -835,22 +840,27 @@ void Platform_GetBindLabel(u8 i, char *out, int outSize)
 // two top buttons, to the HOST_PAUSE / HOST_FASTFORWARD emulator actions. `icon`
 // draws a glyph on the emulator-function buttons since they have no GBA label.
 enum { TB_ICON_NONE, TB_ICON_PAUSE, TB_ICON_FF };
-struct TouchButton { float cx, cy, half; u16 key; int pad; int icon; };
+// cx/cy are the landscape centre (fractions of the window); pcx/pcy the portrait
+// centre. Portrait puts the pad in the lower half (thumbs reach the bottom) with
+// the game filling above it. `half` is a fraction of the SHORT window side, so a
+// button is the same physical size in either orientation. See DrawTouchOverlay.
+struct TouchButton { float cx, cy, pcx, pcy, half; u16 key; int pad; int icon; };
 static const struct TouchButton sTouchButtons[] = {
-    { 0.080f, 0.55f, 0.060f, DPAD_LEFT,     SDL_GAMEPAD_BUTTON_DPAD_LEFT,      TB_ICON_NONE  },
-    { 0.200f, 0.55f, 0.060f, DPAD_RIGHT,    SDL_GAMEPAD_BUTTON_DPAD_RIGHT,     TB_ICON_NONE  },
-    { 0.140f, 0.38f, 0.060f, DPAD_UP,       SDL_GAMEPAD_BUTTON_DPAD_UP,        TB_ICON_NONE  },
-    { 0.140f, 0.72f, 0.060f, DPAD_DOWN,     SDL_GAMEPAD_BUTTON_DPAD_DOWN,      TB_ICON_NONE  },
-    { 0.930f, 0.52f, 0.070f, A_BUTTON,      SDL_GAMEPAD_BUTTON_SOUTH,          TB_ICON_NONE  },
-    { 0.820f, 0.70f, 0.070f, B_BUTTON,      SDL_GAMEPAD_BUTTON_EAST,           TB_ICON_NONE  },
-    { 0.560f, 0.90f, 0.048f, START_BUTTON,  SDL_GAMEPAD_BUTTON_START,          TB_ICON_NONE  },
-    { 0.440f, 0.90f, 0.048f, SELECT_BUTTON, SDL_GAMEPAD_BUTTON_BACK,           TB_ICON_NONE  },
-    { 0.070f, 0.10f, 0.055f, L_BUTTON,      SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,  TB_ICON_NONE  },
-    { 0.930f, 0.10f, 0.055f, R_BUTTON,      SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, TB_ICON_NONE  },
-    // Emulator functions, top-centre. key = 0 (not a GBA button); they resolve
+    //  landscape        portrait        half    key            pad                                icon
+    { 0.080f, 0.55f,  0.140f, 0.800f, 0.060f, DPAD_LEFT,     SDL_GAMEPAD_BUTTON_DPAD_LEFT,      TB_ICON_NONE  },
+    { 0.200f, 0.55f,  0.320f, 0.800f, 0.060f, DPAD_RIGHT,    SDL_GAMEPAD_BUTTON_DPAD_RIGHT,     TB_ICON_NONE  },
+    { 0.140f, 0.38f,  0.230f, 0.720f, 0.060f, DPAD_UP,       SDL_GAMEPAD_BUTTON_DPAD_UP,        TB_ICON_NONE  },
+    { 0.140f, 0.72f,  0.230f, 0.880f, 0.060f, DPAD_DOWN,     SDL_GAMEPAD_BUTTON_DPAD_DOWN,      TB_ICON_NONE  },
+    { 0.930f, 0.52f,  0.860f, 0.780f, 0.070f, A_BUTTON,      SDL_GAMEPAD_BUTTON_SOUTH,          TB_ICON_NONE  },
+    { 0.820f, 0.70f,  0.680f, 0.870f, 0.070f, B_BUTTON,      SDL_GAMEPAD_BUTTON_EAST,           TB_ICON_NONE  },
+    { 0.560f, 0.90f,  0.580f, 0.955f, 0.048f, START_BUTTON,  SDL_GAMEPAD_BUTTON_START,          TB_ICON_NONE  },
+    { 0.440f, 0.90f,  0.420f, 0.955f, 0.048f, SELECT_BUTTON, SDL_GAMEPAD_BUTTON_BACK,           TB_ICON_NONE  },
+    { 0.070f, 0.10f,  0.120f, 0.630f, 0.055f, L_BUTTON,      SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,  TB_ICON_NONE  },
+    { 0.930f, 0.10f,  0.880f, 0.630f, 0.055f, R_BUTTON,      SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, TB_ICON_NONE  },
+    // Emulator functions, top of screen. key = 0 (not a GBA button); they resolve
     // through the binding table to HOST_PAUSE / HOST_FASTFORWARD.
-    { 0.430f, 0.075f, 0.045f, 0, SDL_GAMEPAD_BUTTON_LEFT_STICK,  TB_ICON_PAUSE },
-    { 0.570f, 0.075f, 0.045f, 0, SDL_GAMEPAD_BUTTON_RIGHT_STICK, TB_ICON_FF    },
+    { 0.430f, 0.075f, 0.400f, 0.045f, 0.045f, 0, SDL_GAMEPAD_BUTTON_LEFT_STICK,  TB_ICON_PAUSE },
+    { 0.570f, 0.075f, 0.600f, 0.045f, 0.045f, 0, SDL_GAMEPAD_BUTTON_RIGHT_STICK, TB_ICON_FF    },
 };
 #define NUM_TOUCH_BUTTONS ((int)(sizeof(sTouchButtons) / sizeof(sTouchButtons[0])))
 
@@ -918,20 +928,24 @@ static bool OutputSize(float *w, float *h)
 
 // True if any active finger falls within button t's hit box. Positions are
 // fractions of the window (fingers arrive normalized; buttons are laid out that
-// way), and w/h are the output pixel size, used only to keep the box square on
-// screen. The box is padded outward: thumbs are imprecise and missing a d-pad
-// is far more annoying than an occasional overlap.
+// way); w/h are the output pixel size. Buttons are square and sized by the short
+// side, so their half-extent differs per axis in normalized space. The box is
+// padded outward: thumbs are imprecise and missing a d-pad is far more annoying
+// than an occasional overlap.
 static bool FingerOnButton(const struct TouchButton *t, float w, float h)
 {
-    float pad = 0.015f;
-    float hy = t->half + pad;
-    float hx = hy * h / w;
+    bool portrait = h > w;
+    float shortSide = w < h ? w : h;
+    float halfPx = (t->half + 0.015f) * shortSide;
+    float hx = halfPx / w, hy = halfPx / h;
+    float cx = portrait ? t->pcx : t->cx;
+    float cy = portrait ? t->pcy : t->cy;
 
     for (int f = 0; f < MAX_FINGERS; f++)
     {
         if (sFingers[f].active &&
-            SDL_fabsf(sFingers[f].x - t->cx) <= hx &&
-            SDL_fabsf(sFingers[f].y - t->cy) <= hy)
+            SDL_fabsf(sFingers[f].x - cx) <= hx &&
+            SDL_fabsf(sFingers[f].y - cy) <= hy)
             return true;
     }
     return false;
@@ -991,11 +1005,15 @@ static void DrawTouchOverlay(void)
     SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode);
     SDL_SetRenderLogicalPresentation(sdlRenderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
 
+    bool portrait = outH > outW;
+    float shortSide = outW < outH ? outW : outH;
+
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
-        float h = t->half * outH;
-        float cx = t->cx * outW, cy = t->cy * outH;
+        float h = t->half * shortSide;
+        float cx = (portrait ? t->pcx : t->cx) * outW;
+        float cy = (portrait ? t->pcy : t->cy) * outH;
         SDL_FRect r = { cx - h, cy - h, h * 2, h * 2 };
         bool on = FingerOnButton(t, outW, outH);
 
