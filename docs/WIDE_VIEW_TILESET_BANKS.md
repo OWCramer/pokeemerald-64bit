@@ -1,11 +1,9 @@
 # Wide view: rendering neighbouring maps with their own tilesets
 
-**Branch:** `bugfixes` · **Stage 1 landed:** `57dd8bd2d`
-
 ## The bug
 
 Hoenn's outdoor maps share a primary tileset but each has its own secondary, and
-only one pair is addressable at a time:
+the GBA can only address one pair at a time:
 
 | map | primary | secondary |
 |---|---|---|
@@ -15,69 +13,99 @@ only one pair is addressable at a time:
 
 Vanilla shows ~7 tiles of a neighbour, authored as plain terrain, so it never
 mattered. The expanded viewport shows up to 64, so a neighbour's metatile id
->= `NUM_METATILES_IN_PRIMARY` is decoded against *our* secondary tileset.
+>= `NUM_METATILES_IN_PRIMARY` was decoded against *our* secondary tileset.
 
 Symptoms, all confirmed in play: terrain correct everywhere (shared primary),
-buildings garbled, **collision and warps correct** (map data is fine, only the
-decode is wrong), the map you stand on always right, walking onto the bad map
-fixes it with no reload.
+buildings garbled, collision and warps correct (the map data is fine, only the
+decode was wrong), the map you stand on always right, and walking onto the bad
+map fixing it with no reload.
 
-## Verified constraints
+## The fix
 
-1. **No spare bits in a map cell.** 10 metatile id + 2 collision + 4 elevation
-   = 16/16 (`include/global.fieldmap.h`). The bank cannot live in the cell.
-2. **`DrawMetatileAt` decodes against the current map only** — it picks
-   `mapLayout->secondaryTileset` unconditionally (`src/field_camera.c`).
-3. **The tilemap entry is the ceiling.** `DrawMetatile` writes raw GBA BG
-   entries and `gba_fast_draw.c` decodes `entry & 0x3FF` (1024 tiles) and
-   `(entry >> 12) & 0xF` (16 palettes). Primary+secondary already consume both
-   ranges exactly, so a second secondary is unaddressable without widening.
-4. Tiles load via `CopyTilesetToVramUsingHeap(tileset, numTiles, tileOffset)`;
-   palettes via `LoadTilesetPalette(tileset, BG_PLTT_ID(n), size)`. Primary
-   occupies tiles 0-511 / pals 0-5, secondary 512-1023 / pals 6-12.
-5. `VRAM_SIZE` is `0x20000` and `PLTT_SIZE` is `BG_PLTT_SIZE + OBJ_PLTT_SIZE`
-   (`include/gba/defines.h`) -- both plain host arrays in `src/platform/bios.c`,
-   so both can grow.
+A **tileset bank** is a full 1024-tile, 16-palette copy of the tileset space the
+GBA can address at once. Bank 0 is the map the player is standing on and keeps
+the vanilla tile 0 / palette 0 bases, so nothing but a connected map's cells
+pays for any of this. Banks 1+ are stacked above the stock VRAM and palette
+layout (`include/gba/defines.h`) rather than carved out of it, so every address
+the rest of the game already uses is unchanged -- OBJ palettes in particular
+stay exactly where sprite rendering expects them.
 
-## Stage 1 (done)
+A bank is keyed on the whole tileset *pair*, not just the secondary, so a
+connection whose primary differs decodes its terrain correctly too, and the
+renderer needs no special case for which half a tile came from.
 
-`sBackupMapBank[]`, a `u8` parallel to `sBackupMapData`, records the owning
-tileset bank per cell. Bank 0 is the current map. `FillConnection` is the single
-point where foreign map data enters the layout, so registering the connected
-map's secondary tileset and tagging there covers all four directions.
+| stage | commit | what |
+|---|---|---|
+| 1 | `57dd8bd2d` | `sBackupMapBank[]`, a `u8` parallel to `sBackupMapData`, records the owning bank per cell. `FillConnection` is the single point where foreign map data enters the layout, so tagging there covers all four directions. |
+| 2 | `da2ed4dfa` | `LoadTilesetBanks()` loads each registered bank's tiles and palettes. |
+| 3 | `f2a41a536` | The renderer carries a bank per tilemap entry and adds that bank's tile and palette bases when decoding. |
+| 4 | `9256abc92` | `DrawMetatileAt` takes the metatile out of the cell's own bank and tags the tilemap; the layer type follows the cell's tileset too. |
+| 5 | `bfe0d0a93` | Bank palettes fade, blend and weather with everything else. |
+| 6 | `385e8387b` | Tileset animations reach every bank that shares the animated tileset. |
 
-Accessors: `MapGridGetTilesetBankAt(x, y)`, `GetTilesetBank(bank)`,
-`GetTilesetBankCount()`. Inert -- nothing reads the bank yet.
+### Why a separate bank plane rather than a wider tilemap entry
 
-## Stages 2-4 (remaining)
+The obvious design is to widen `gOverworldTilemapBuffer_Bg1/2/3` to `u32` and
+give the entry more tile and palette bits. The field tilemaps are handed to
+`bg.c` through `SetBgTilemapBuffer`, though, and anything there that wrote a
+plain 16-bit GBA entry into a `u32` buffer would corrupt it silently. A separate
+`u8` plane cannot be mistaken for a tilemap by code that does not know about it,
+and it costs one byte load per tile fetch in the renderer.
 
-**2. Load every bank's tileset.** After connections are filled, walk banks
-1..`GetTilesetBankCount()-1` and load each secondary's tiles and palettes into
-its own region. Suggested layout, extending rather than reusing:
+### Things that had to follow the bank
 
-    tiles bank N   = NUM_TILES_TOTAL + (N-1) * (NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY)
-    pals  bank N   = NUM_PALS_TOTAL  + (N-1) * (NUM_PALS_TOTAL  - NUM_PALS_IN_PRIMARY)
+Loading tiles and palettes is the easy half. Everything that processes a
+palette or a tile *after* it is loaded had to learn about banks as well, and
+missing any one of them is individually visible:
 
-Requires growing `VRAM_SIZE` (16 KB per extra bank) and BG palette space
-(~224 B per extra bank). `LoadBgTiles` may bound-check against the BG char
-base; writing into the extended region may need a direct VRAM write instead.
+* **Fades and blends** are driven by a 32-bit palette selection mask that cannot
+  reach a bank. Left alone, a connected map kept full daylight colours while the
+  screen faded to black on every warp and battle.
+* **Weather** works in contiguous palette ranges, so it only needed the ranges
+  widened -- except its colour-map table, which is indexed by palette number and
+  only describes the real 32. A bank palette takes the entry of the BG palette
+  it mirrors.
+* **Tileset animations** write frames into the current map's tiles. Each bank
+  holds its own copy, so without mirroring, the same stretch of water animates on
+  one side of a map seam and stands still on the other.
+* **Metatile layer type** decides which background layer each half of a metatile
+  is drawn to, so leaving it on the current map put a connected town's rooftops
+  behind the layer that covers sprites.
 
-**3. Widen the tilemap entry.** `gOverworldTilemapBuffer_Bg1/2/3` become `u32`,
-`struct BgExtMap` gains a wide flag, and `FetchBgEntry` reads `u32` for wide
-flat maps. Decode becomes a wider tile index and palette field. This is the
-renderer hot loop -- the one piece worth benchmarking after.
+The metatile **behaviour** lookup is deliberately *not* bank-aware. Behaviours
+drive movement, and the camera transition makes a connected map current before
+the player can stand on any of its cells, so every cell consulted for movement
+is bank 0 -- which also means none of this can change what the player can walk
+on.
 
-**4. Decode per bank.** `DrawMetatileAt` uses `GetTilesetBank(MapGridGetTilesetBankAt(x, y))`
-for the metatile table, and adds that bank's tile and palette bases when
-stamping the entry.
+## Known limits
+
+* `MAX_TILESET_BANKS` distinct tileset pairs on screen at once (8). A pair that
+  will not fit falls back to bank 0, i.e. the old wrong-but-harmless behaviour
+  rather than an out-of-range bank.
+* A connected map whose *own secondary* animates -- a town fountain, a flag --
+  shows its first frame. Running those needs a second set of animation callbacks
+  and counters per bank. All of the outdoor animation is unaffected, because
+  water, waterfalls, shorelines and flowers live in `gTileset_General`, the
+  primary every Hoenn overworld map shares.
+* Both halves of a bank's pair are decompressed on every map load even when the
+  primary matches the current map's. Copying the already-decompressed tiles out
+  of VRAM would be cheaper but would depend on the primary having finished its
+  asynchronous load, which is not true at every call site.
 
 ## Dead ends (do not retry)
 
-* **Tileset mismatch is not the whole story for every pair** -- Oldale, Route
-  101, 102, 103 and Littleroot all share `gTileset_Petalburg`, so a test between
-  those will show nothing. Reproduce across Route 103 <-> Route 110.
+* **Oldale, Route 101, 102, 103 and Littleroot all share `gTileset_Petalburg`**,
+  so a test between those shows nothing either way. Reproduce across
+  Route 103 <-> Route 110.
 * **The border margin is not stale.** `InitMapLayoutData` already clears the
-  whole buffer to `MAPGRID_UNDEFINED` every map load; adding a fill in
+  whole buffer to `MAPGRID_UNDEFINED` on every map load; adding a fill in
   `InitBackupMapLayoutData` is dead code.
 * **Connections are filled to full `MAP_BORDER_TOTAL` depth** already; the fill
   offsets are correct.
+* **There are no spare bits in a map cell.** 10 metatile id + 2 collision + 4
+  elevation = 16/16 (`include/global.fieldmap.h`), which is why the bank lives
+  in a parallel array rather than in the cell.
+* **`LoadBgTiles` cannot reach a bank.** It computes its destination as a `u16`
+  byte offset, which `TILESET_BANK_VRAM_START` (0x20000) overflows to zero.
+  `CopyTilesetToVramBank` writes VRAM directly instead.
