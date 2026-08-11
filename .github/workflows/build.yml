@@ -273,6 +273,106 @@ jobs:
         with:
           files: dist/pokeemerald-*.pkg.tar.zst
 
+  # Universal debug-installable APK carrying both ABIs (arm64-v8a for devices,
+  # x86_64 for emulators). libmain.so and libSDL3.so are cross-compiled with the
+  # NDK by `make android`, staged into jniLibs, and packaged by Gradle.
+  android:
+    name: Android (.apk, arm64-v8a + x86_64)
+    runs-on: ubuntu-24.04
+    env:
+      # Must match the org.libsdl.app Java glue checked into android/ (SDL 3.2.x).
+      SDL_TAG: release-3.2.x
+      # r27+ so the .so's are 16 KB-page aligned, which Android 15+ devices (and
+      # the 16k emulator images) require. Pinned for reproducible builds.
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # clang/make/python3/libpng build the asset tools and the game exactly as
+      # the other native jobs; cmake+ninja build SDL3 for Android.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
+            clang make python3 libpng-dev pkg-config cmake ninja-build
+
+      - name: Install Android NDK ${{ env.NDK_VERSION }}
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;${NDK_VERSION}" > /dev/null
+          echo "ANDROID_NDK=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      # SDL3 for Android is the slowest step and only changes with SDL_TAG/NDK.
+      - name: Cache SDL3 for Android
+        id: sdl
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-android/SDL/include
+            build-android/SDL/b-arm64-v8a
+            build-android/SDL/b-x86_64
+          key: sdl3-android-${{ env.SDL_TAG }}-ndk${{ env.NDK_VERSION }}
+
+      - name: Build SDL3 for Android (both ABIs)
+        if: steps.sdl.outputs.cache-hit != 'true'
+        run: |
+          rm -rf build-android/SDL
+          git clone --depth 1 --branch "$SDL_TAG" \
+            https://github.com/libsdl-org/SDL build-android/SDL
+          for abi in arm64-v8a x86_64; do
+            cmake -S build-android/SDL -B "build-android/SDL/build-$abi" -G Ninja \
+              -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI="$abi" -DANDROID_PLATFORM=android-21 \
+              -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=ON -DSDL_STATIC=OFF
+            cmake --build "build-android/SDL/build-$abi" -j"$(nproc)"
+            mkdir -p "build-android/SDL/b-$abi"
+            cp "build-android/SDL/build-$abi/libSDL3.so" "build-android/SDL/b-$abi/"
+          done
+
+      - name: Build native libraries (both ABIs)
+        run: |
+          for abi in arm64-v8a x86_64; do
+            make android ANDROID_ABI="$abi" ANDROID_NDK="$ANDROID_NDK" -j"$(nproc)"
+          done
+
+      - name: Build APK
+        run: cd android && ./gradlew assembleRelease --console=plain
+
+      # Sign with an ephemeral key (CI holds no signing secret). The APK installs
+      # and runs; the trade-off is that each release's signature differs, so
+      # updating in place is blocked -- users uninstall the old one first. Point
+      # a real keystore at this step (a repo secret) to fix that.
+      - name: Sign APK
+        run: |
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)"
+          UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          keytool -genkeypair -v -keystore ci.keystore -storepass android \
+            -keypass android -alias ci -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Pokemon Emerald"
+          "${BT}zipalign" -f 4 "$UNSIGNED" aligned.apk
+          "${BT}apksigner" sign --ks ci.keystore --ks-pass pass:android \
+            --ks-key-alias ci --key-pass pass:android aligned.apk
+          "${BT}apksigner" verify --print-certs aligned.apk | head -1
+          mkdir -p dist && mv aligned.apk dist/pokeemerald-android.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokeemerald-android
+          path: dist/pokeemerald-android.apk
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pokeemerald-android.apk
+
   # Windows is still not buildable from this tree: the only path in the
   # Makefile is a hardcoded 32-bit MinGW cross-compile against SDL2 inherited
   # from upstream, predating the 64-bit pointer work.
