@@ -258,6 +258,15 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
+    // menu -- and that tilemap wraps, so on a wider viewport it repeats across
+    // the screen. Only an extended (flat, window-sized) BG spans the whole
+    // render; everything else is confined to the vanilla view.
+    unsigned int clipLo   = flatMap ? 0u : (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = flatMap ? (unsigned int)gRenderWidth : (unsigned int)DISPLAY_WIDTH;
+
+    if (!flatMap && (lineNum < 0 || lineNum >= DISPLAY_HEIGHT))
+        return;
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -332,6 +341,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     //}
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
         if (scanline->winMask[x] & WINMASK_CLR) { \
             switch (blendMode) { \
             case 1: \
@@ -349,7 +359,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         }else{ \
             line[x] = pal[palBase + (pixel)] | 0x8000; \
         } \
-        mask[x] = 1 << bgNum;
+        mask[x] = 1 << bgNum; }
     
     #define writeBgPixelWin(pixel, x)   \
         if ( ((pixel)) != 0 ) { \
@@ -505,6 +515,15 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
+    // menu -- and that tilemap wraps, so on a wider viewport it repeats across
+    // the screen. Only an extended (flat, window-sized) BG spans the whole
+    // render; everything else is confined to the vanilla view.
+    unsigned int clipLo   = flatMap ? 0u : (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = flatMap ? (unsigned int)gRenderWidth : (unsigned int)DISPLAY_WIDTH;
+
+    if (!flatMap && (lineNum < 0 || lineNum >= DISPLAY_HEIGHT))
+        return;
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -578,8 +597,9 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     //}
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
         line[x] = pal[palBase + (pixel)] | 0x8000; \
-        mask[x] = 1 << bgNum;
+        mask[x] = 1 << bgNum; }
     
     #define writeBgPixelWin(pixel, x)   \
         if ( ((pixel)) != 0 ) { \
@@ -737,6 +757,15 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
+    // menu -- and that tilemap wraps, so on a wider viewport it repeats across
+    // the screen. Only an extended (flat, window-sized) BG spans the whole
+    // render; everything else is confined to the vanilla view.
+    unsigned int clipLo   = flatMap ? 0u : (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = flatMap ? (unsigned int)gRenderWidth : (unsigned int)DISPLAY_WIDTH;
+
+    if (!flatMap && (lineNum < 0 || lineNum >= DISPLAY_HEIGHT))
+        return;
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -814,6 +843,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     //}
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
     if ( ((pixel)) != 0 ) { \
         switch (blendMode) {\
         case 1: \
@@ -829,7 +859,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
             line[x] = alphaBrightnessDecrease(pal[palBase + (pixel)]) | 0x8000; \
             break; } \
         mask[x] = 1 << bgNum; \
-    }
+    } }
     
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
@@ -978,6 +1008,15 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
+    // menu -- and that tilemap wraps, so on a wider viewport it repeats across
+    // the screen. Only an extended (flat, window-sized) BG spans the whole
+    // render; everything else is confined to the vanilla view.
+    unsigned int clipLo   = flatMap ? 0u : (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = flatMap ? (unsigned int)gRenderWidth : (unsigned int)DISPLAY_WIDTH;
+
+    if (!flatMap && (lineNum < 0 || lineNum >= DISPLAY_HEIGHT))
+        return;
     uint16_t* mask = scanline->bgMask;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     
@@ -1056,11 +1095,12 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     //}
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
         if ( ((pixel)) != 0 ) { \
             line[x] = pal[palBase + (pixel)] | 0x8000; \
             mask[x] = 1 << bgNum; \
         } \
-    
+     }
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -1277,6 +1317,12 @@ static void RenderRotScaleBGScanlineWinBlend(int bgNum, uint16_t control, uint16
 
     uint8_t *bgtiles = (uint8_t *)(VRAM_ + charBaseBlock * 0x4000);
     uint8_t *bgmap = (uint8_t *)(VRAM_ + screenBaseBlock * 0x800);
+    // Affine BGs are never window-sized, so they are always a 240x160 image.
+    unsigned int clipLo   = (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = (unsigned int)DISPLAY_WIDTH;
+
+    if (lineNum < 0 || lineNum >= DISPLAY_HEIGHT)
+        return;
     uint16_t *pal = (uint16_t *)PLTT;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     uint16_t* mask = scanline->bgMask;
@@ -1324,6 +1370,7 @@ static void RenderRotScaleBGScanlineWinBlend(int bgNum, uint16_t control, uint16
     int realY = currentY;
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
         if (scanline->winMask[x] & WINMASK_CLR) { \
             switch (blendMode) { \
             case 1: \
@@ -1341,7 +1388,7 @@ static void RenderRotScaleBGScanlineWinBlend(int bgNum, uint16_t control, uint16
         }else{ \
             line[x] = pal[pixel] | 0x8000; \
         } \
-        mask[x] = 1 << bgNum;
+        mask[x] = 1 << bgNum; }
     
     #define writeBgPixelWin(pixel, x)   \
         if ( ((pixel)) != 0 ) { \
@@ -1420,6 +1467,12 @@ static void RenderRotScaleBGScanlineWin(int bgNum, uint16_t control, uint16_t x,
 
     uint8_t *bgtiles = (uint8_t *)(VRAM_ + charBaseBlock * 0x4000);
     uint8_t *bgmap = (uint8_t *)(VRAM_ + screenBaseBlock * 0x800);
+    // Affine BGs are never window-sized, so they are always a 240x160 image.
+    unsigned int clipLo   = (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = (unsigned int)DISPLAY_WIDTH;
+
+    if (lineNum < 0 || lineNum >= DISPLAY_HEIGHT)
+        return;
     uint16_t *pal = (uint16_t *)PLTT;
     uint16_t* mask = scanline->bgMask;
 
@@ -1466,8 +1519,9 @@ static void RenderRotScaleBGScanlineWin(int bgNum, uint16_t control, uint16_t x,
     int realY = currentY;
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
         line[x] = pal[pixel] | 0x8000; \
-        mask[x] = 1 << bgNum;
+        mask[x] = 1 << bgNum; }
     
     #define writeBgPixelWin(pixel, x)   \
         if ( ((pixel)) != 0 ) { \
@@ -1546,6 +1600,12 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
 
     uint8_t *bgtiles = (uint8_t *)(VRAM_ + charBaseBlock * 0x4000);
     uint8_t *bgmap = (uint8_t *)(VRAM_ + screenBaseBlock * 0x800);
+    // Affine BGs are never window-sized, so they are always a 240x160 image.
+    unsigned int clipLo   = (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = (unsigned int)DISPLAY_WIDTH;
+
+    if (lineNum < 0 || lineNum >= DISPLAY_HEIGHT)
+        return;
     uint16_t *pal = (uint16_t *)PLTT;
     uint8_t blendMode = (REG_BLDCNT >> 6) & 3;
     uint16_t* mask = scanline->bgMask;
@@ -1604,6 +1664,7 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
     int realY = currentY;
     
     #define writeBgPixel(pixel, x)  \
+        if ((unsigned int)((x) - clipLo) < clipSpan) { \
     if ( ((pixel)) != 0 ) { \
         switch (blendMode) {\
         case 1: \
@@ -1619,7 +1680,7 @@ static void RenderRotScaleBGScanlineBlend(int bgNum, uint16_t control, uint16_t 
             line[x] = alphaBrightnessDecrease(pal[pixel]) | 0x8000; \
             break; } \
         mask[x] = 1 << bgNum; \
-    }
+    } }
 
     if (bgcnt->areaOverflowMode)
     {
@@ -1693,6 +1754,12 @@ static void RenderRotScaleBGScanlineNoEffect(int bgNum, uint16_t control, uint16
 
     uint8_t *bgtiles = (uint8_t *)(VRAM_ + charBaseBlock * 0x4000);
     uint8_t *bgmap = (uint8_t *)(VRAM_ + screenBaseBlock * 0x800);
+    // Affine BGs are never window-sized, so they are always a 240x160 image.
+    unsigned int clipLo   = (unsigned int)gRenderOffsetX;
+    unsigned int clipSpan = (unsigned int)DISPLAY_WIDTH;
+
+    if (lineNum < 0 || lineNum >= DISPLAY_HEIGHT)
+        return;
     uint16_t *pal = (uint16_t *)PLTT;
     
     // A row outside the vanilla view has no window over it, so it takes this
