@@ -97,12 +97,27 @@ Linux (clean build, links, boots, full play) and macOS (overworld, battles, and
 sound including town/route loop points and Pokémon cries — the ld64 layout crash
 is fixed). iOS/Android still need a build + run.
 
-Phase 6 (`PtrRebase32`) is deferred: it is a separate runtime split-pointer
-problem (not bytecode), invasive and collision-prone, and would not remove
-`gScriptBase` anyway (`ScriptDataToPtr` keeps it as a runtime base). Not worth
-its risk until the phases above are validated on all platforms.
+Phase 6 (`PtrRebase32`) is **closed as "keep the minimal anchor"** — the outcome
+this document flagged as acceptable up front. Reasons it is not converted:
+
+* **Structurally can't widen.** The value is a runtime C pointer split across two
+  16-bit `data[]` slots. `struct Sprite` has only `data[8]`, with the pointer
+  already in the last two slots — there is no room for a full 64-bit (4-slot)
+  store without resizing a core engine struct the whole codebase assumes.
+* **The anchor stays either way.** `gScriptBase` is load-bearing for the msgbox
+  bytecode reload (`ScriptDataToPtr`), the Mach-O sound gotos, and `battle_setup`.
+  Converting `PtrRebase32` would remove one of several anchor users and delete
+  nothing. An anchor-free split-pointer (e.g. a handle table) would only trade a
+  proven ±2 GB recovery for table lifecycle risk across 16 files.
+
+So `PTR_REBASE32` remains the 2-slot value + `gScriptBase` recovery, documented in
+`global.h` as the intended final form rather than a pending step.
 
 ## End state
 
-One emit rule, one read rule, no anchor, no patcher, no `-no-pie`/`-z notext`. A new 64-bit
-target becomes "does it link a normal PIE? then pointers work" — no scheme to invent.
+One emit rule and one read rule for **bytecode** pointers — self-relative, no per-OS
+scheme — with a single documented Mach-O exception (sound gotos) and a single
+retained runtime anchor (`gScriptBase`) shared by the msgbox reload, the Mach-O
+sound gotos, `battle_setup`, and the task/sprite split-pointer path. A new 64-bit
+target becomes "does it link a normal PIE? then bytecode pointers work" — no scheme
+to invent, no post-link patcher, no `-no-pie`/`-z notext`.

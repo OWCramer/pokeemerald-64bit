@@ -224,8 +224,13 @@ static inline void *PtrRebase32(u32 v)
 // -image_base is ignored -- which is the only reason the offset scheme exists.
 // T1_READ_PTR / T2_READ_PTR are self-relative and uniform (defined above), so
 // PORTABLE_ELF no longer overrides them. PTR_REBASE32 -- the separate task/sprite
-// split-pointer path -- is still forked here (see docs/POINTER_MIGRATION.md
-// phase 6).
+// split-pointer path -- deliberately keeps the runtime anchor and is forked here.
+// It cannot become self-relative: the value is a runtime C pointer squeezed into
+// two 16-bit data[] slots, and struct Sprite has only data[8] with the pointer
+// already in the last two, so there is no room to widen to a full 64-bit store.
+// gScriptBase stays regardless (bytecode reload, sound gotos, battle_setup all
+// use it), so this fork is the intended final state, not a pending migration.
+// See docs/POINTER_MIGRATION.md phase 6.
 #undef PTR_REBASE32
 #define PTR_REBASE32(v)  ((void *)(uintptr_t)(v))
 #endif
