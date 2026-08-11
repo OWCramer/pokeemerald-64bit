@@ -895,34 +895,37 @@ static void SetFinger(SDL_FingerID id, float x, float y, bool down)
     }
 }
 
-// SDL_ConvertEventToRenderCoordinates puts touches in the renderer's *logical*
-// space, and our overlay draws into that same space. That is the render size
-// multiplied by the integer scale -- not gRenderWidth -- so ask SDL for it
-// rather than recomputing, and the pad follows whatever presentation
-// UpdateViewport settled on.
-static bool LogicalExtent(float *w, float *h)
+// Physical output size in pixels. The pad is laid out and hit-tested against
+// this, NOT the renderer's logical presentation. The game re-sets the
+// presentation every frame (UpdateViewport) to gRenderWidth*scale, which is the
+// expanded viewport in the overworld but only 240x160 in menus -- so anchoring
+// the pad to it dragged the buttons inward whenever a menu opened. The window
+// drawable never moves, so the pad stays fixed on screen. Finger events already
+// arrive normalized [0,1] to this same window, so the two spaces line up.
+static bool OutputSize(float *w, float *h)
 {
-    int lw = 0, lh = 0;
-    SDL_RendererLogicalPresentation mode;
+    int pw = 0, ph = 0;
 
-    if (sdlRenderer == NULL ||
-        !SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode) ||
-        lw <= 0 || lh <= 0)
+    if (sdlWindow == NULL ||
+        !SDL_GetWindowSizeInPixels(sdlWindow, &pw, &ph) ||
+        pw <= 0 || ph <= 0)
         return false;
 
-    *w = (float)lw;
-    *h = (float)lh;
+    *w = (float)pw;
+    *h = (float)ph;
     return true;
 }
 
-// True if any active finger falls within button t's hit box. The box is padded
-// outward: thumbs are imprecise and missing a d-pad is far more annoying than
-// an occasional overlap.
-static bool FingerOnButton(const struct TouchButton *t, float lw, float lh)
+// True if any active finger falls within button t's hit box. Positions are
+// fractions of the window (fingers arrive normalized; buttons are laid out that
+// way), and w/h are the output pixel size, used only to keep the box square on
+// screen. The box is padded outward: thumbs are imprecise and missing a d-pad
+// is far more annoying than an occasional overlap.
+static bool FingerOnButton(const struct TouchButton *t, float w, float h)
 {
     float pad = 0.015f;
     float hy = t->half + pad;
-    float hx = hy * lh / lw;
+    float hx = hy * h / w;
 
     for (int f = 0; f < MAX_FINGERS; f++)
     {
@@ -941,17 +944,17 @@ static bool FingerOnButton(const struct TouchButton *t, float lw, float lh)
 // controller. Buttons only count while the overlay is actually shown.
 static void SyncTouchPad(void)
 {
-    float lw, lh;
+    float w, h;
     bool live;
 
     if (sTouchPadJoy == NULL)
         return;
 
-    live = ShowTouchOverlay() && LogicalExtent(&lw, &lh);
+    live = ShowTouchOverlay() && OutputSize(&w, &h);
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
-        bool down = live && FingerOnButton(t, lw, lh);
+        bool down = live && FingerOnButton(t, w, h);
         SDL_SetJoystickVirtualButton(sTouchPadJoy, t->pad, down);
     }
 }
@@ -974,18 +977,27 @@ static void DrawTouchOverlay(void)
 {
     // Shown whenever there is no controller, rather than waiting for a first
     // touch: a pad nobody can see is a pad nobody knows to use.
-    float lw, lh;
+    float outW, outH;
 
-    if (!ShowTouchOverlay() || !LogicalExtent(&lw, &lh))
+    if (!ShowTouchOverlay() || !OutputSize(&outW, &outH))
         return;
+
+    // Draw in raw output pixels, independent of the game's logical presentation
+    // (which shrinks to 240x160 in menus and would drag the pad inward). Disable
+    // the presentation for the overlay, then restore it -- the next frame's
+    // game render re-applies its own via UpdateViewport regardless.
+    int lw, lh;
+    SDL_RendererLogicalPresentation mode;
+    SDL_GetRenderLogicalPresentation(sdlRenderer, &lw, &lh, &mode);
+    SDL_SetRenderLogicalPresentation(sdlRenderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
 
     for (int b = 0; b < NUM_TOUCH_BUTTONS; b++)
     {
         const struct TouchButton *t = &sTouchButtons[b];
-        float h = t->half * lh;
-        float cx = t->cx * lw, cy = t->cy * lh;
+        float h = t->half * outH;
+        float cx = t->cx * outW, cy = t->cy * outH;
         SDL_FRect r = { cx - h, cy - h, h * 2, h * 2 };
-        bool on = FingerOnButton(t, lw, lh);
+        bool on = FingerOnButton(t, outW, outH);
 
         SDL_SetRenderDrawColor(sdlRenderer, 255, 255, 255, on ? 150 : 55);
         SDL_RenderFillRect(sdlRenderer, &r);
@@ -1013,6 +1025,8 @@ static void DrawTouchOverlay(void)
             FillTri(bx, top, bx, bot, bx + tw, cy);       // second >
         }
     }
+
+    SDL_SetRenderLogicalPresentation(sdlRenderer, lw, lh, mode);
     SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
 }
 
@@ -1124,10 +1138,6 @@ void ProcessEvents(void)
 
     while (SDL_PollEvent(&event))
     {
-        // Touch and mouse arrive in window coordinates; this rewrites them into
-        // the 240x160 logical space, which is where the pad is laid out.
-        SDL_ConvertEventToRenderCoordinates(sdlRenderer, &event);
-
         switch (event.type)
         {
         case SDL_EVENT_QUIT:
@@ -1233,13 +1243,13 @@ void ProcessEvents(void)
         case SDL_EVENT_FINGER_UP:
         case SDL_EVENT_FINGER_CANCELED:
         {
-            float lw, lh;
             bool down = (event.type == SDL_EVENT_FINGER_DOWN ||
                          event.type == SDL_EVENT_FINGER_MOTION);
 
-            if (LogicalExtent(&lw, &lh))
-                SetFinger(event.tfinger.fingerID, event.tfinger.x / lw,
-                          event.tfinger.y / lh, down);
+            // tfinger.x/y are normalized [0,1] to the window -- a stable space
+            // that does not move with the game's logical presentation, and the
+            // same space the pad is laid out in. Store them directly.
+            SetFinger(event.tfinger.fingerID, event.tfinger.x, event.tfinger.y, down);
             break;
         }
 
