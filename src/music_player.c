@@ -228,9 +228,14 @@ void MP2K_event_goto(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
     // be 8-byte aligned, and these sit at arbitrary offsets in a packed stream.
     s32 rel;
     memcpy(&rel, track->cmdPtr, sizeof rel);
-#ifdef PORTABLE_ELF
-    // ELF (Linux/Android): the offset is self-relative to its own slot, which
-    // the assembler+linker fold to a stable constant. target = slot + offset.
+#ifndef __APPLE__
+    // ELF (Linux and Android): the offset is self-relative to its own slot,
+    // which the assembler+linker fold to a stable constant. target = slot +
+    // offset. Gated on __APPLE__ (object format), NOT PORTABLE_ELF: Android is
+    // ELF and self-relative too, but is deliberately not built with PORTABLE_ELF
+    // (it is PIE, unlike Linux's -no-pie), so keying on that macro would wrongly
+    // route Android through the Mach-O branch -- which read a gScriptBase-based
+    // pointer from a self-relative offset and segfaulted the mixer.
     track->cmdPtr = track->cmdPtr + rel;
 #else
     // Mach-O (macOS/iOS): the offset is gScriptBase-relative. It has to be --
