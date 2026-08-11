@@ -179,7 +179,7 @@ endif
   endif
   ifeq ($(shell uname -s),Darwin)
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/999: .long (\1 - 999b)/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -196,7 +196,7 @@ endif
   # redirecting .rodata to .data.rel.ro so the 8-byte .quad pointers' RELATIVE
   # relocations don't create text relocations, which Android's loader rejects.
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/999: .long (\1 - 999b)/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
@@ -208,7 +208,7 @@ endif
   else
   # ELF keeps its own section names, and C symbols carry no underscore.
   ASM_PSEUDO_OP_CONV := sed \
-	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/999: .long (\1 - 999b)/' \
+	-e 's/^[[:blank:]][[:blank:]]\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/\t.long (\1 - .)/' \
 	-e 's/\.4byte[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
 	-e 's/\.4byte/.long/g;s/\.2byte/\.short/g' \
 	-e 's/\.int[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)/.quad \1/g' \
