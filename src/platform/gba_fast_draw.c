@@ -179,11 +179,7 @@ static inline uint32_t FetchBgEntry(const uint16_t *bgmap, const uint8_t *bankma
 // no bank -- has both deltas zero, so an ordinary BG decodes exactly as it did
 // before any of this existed.
 u32 gTilesetBankTileDelta[MAX_TILESET_BANKS][2];
-
-static inline unsigned int BankPalBase(unsigned int bank)
-{
-    return TILESET_BANK_PAL_BASE(bank);
-}
+u32 gTilesetBankPalBase[MAX_TILESET_BANKS];
 
 // Split out of the twelve places that decode an entry so a bank cannot be
 // honoured in some of them and forgotten in the rest.
@@ -192,7 +188,7 @@ static inline unsigned int BankPalBase(unsigned int bank)
         unsigned int bank_ = entry >> 16;                                  \
         unsigned int tile_ = entry & 0x3FF;                                \
         tileNum = tile_ + gTilesetBankTileDelta[bank_][tile_ >> 9];        \
-        paletteNum = ((entry >> 12) & 0xF) + BankPalBase(bank_);           \
+        paletteNum = ((entry >> 12) & 0xF) + gTilesetBankPalBase[bank_];           \
         palBase = is8bpp ? 0 : (paletteNum << 4);                          \
     } while (0)
 

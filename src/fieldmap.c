@@ -72,6 +72,8 @@ struct TilesetBank
 {
     const struct Tileset *primary;
     const struct Tileset *secondary;
+    u8 primarySlot;
+    u8 secondarySlot;
 };
 
 static struct TilesetBank sTilesetBanks[MAX_TILESET_BANKS];
@@ -202,12 +204,8 @@ static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tilese
     i = sTilesetBankCount++;
     sTilesetBanks[i].primary = primary;
     sTilesetBanks[i].secondary = secondary;
-
-    // Publish what the renderer needs: what to add to a tile id to reach the
-    // slot it really lives in. The secondary's ids start at
-    // NUM_TILES_IN_PRIMARY, so its delta carries that back off.
-    gTilesetBankTileDelta[i][0] = TILESET_SLOT_TILE_BASE(primarySlot);
-    gTilesetBankTileDelta[i][1] = TILESET_SLOT_TILE_BASE(secondarySlot) - NUM_TILES_IN_PRIMARY;
+    sTilesetBanks[i].primarySlot = primarySlot;
+    sTilesetBanks[i].secondarySlot = secondarySlot;
     return i;
 }
 
@@ -228,6 +226,41 @@ void InitTilesetBanks(void)
     }
 }
 
+// Tells the renderer where each bank's tiles and palettes are -- except the
+// current map's, which is pointed back at the stock VRAM and palette layout.
+//
+// This is the one thing that keeps the rest of the game working. Door
+// animations, the cave-entry flash, Mirage Tower crumbling, field move streaks:
+// everything that changes the field's tiles or palettes at runtime writes to
+// the stock layout, and has since long before any of this existed. Redirecting
+// each of them to a slot means finding all of them, and a miss is either
+// invisible or -- because slots are permanent -- corruption that outlives the
+// map. Only *other* maps on screen go through a bank, which is all a bank was
+// ever for.
+static void PublishTilesetBankBases(void)
+{
+    u8 bank;
+
+    for (bank = 1; bank < sTilesetBankCount; bank++)
+    {
+        if (bank == sCurrentTilesetBank)
+        {
+            gTilesetBankTileDelta[bank][0] = 0;
+            gTilesetBankTileDelta[bank][1] = 0;
+            gTilesetBankPalBase[bank] = 0;
+        }
+        else
+        {
+            // A secondary's ids start at NUM_TILES_IN_PRIMARY but its slot
+            // starts at 0, so its delta carries that back off.
+            gTilesetBankTileDelta[bank][0] = TILESET_SLOT_TILE_BASE(sTilesetBanks[bank].primarySlot);
+            gTilesetBankTileDelta[bank][1] = TILESET_SLOT_TILE_BASE(sTilesetBanks[bank].secondarySlot)
+                                           - NUM_TILES_IN_PRIMARY;
+            gTilesetBankPalBase[bank] = TILESET_BANK_PAL_BASE(bank);
+        }
+    }
+}
+
 // Tags every cell with the current map's bank. Connections overwrite the cells
 // they fill; the Battle Pyramid and Trainer Hill generate their floors without
 // going through InitMapLayoutData and call this directly.
@@ -238,6 +271,7 @@ static void ResetTilesetBanks(void)
         sCurrentTilesetBank = RegisterTilesetBank(gMapHeader.mapLayout->primaryTileset,
                                                   gMapHeader.mapLayout->secondaryTileset);
     memset(sBackupMapBank, sCurrentTilesetBank, sizeof(sBackupMapBank));
+    PublishTilesetBankBases();
 }
 
 u8 GetCurrentTilesetBank(void)
@@ -1195,6 +1229,17 @@ void LoadTilesetBankPalettes(void)
         LoadTilesetPalette(sTilesetBanks[bank].secondary, palBase + PLTT_ID(NUM_PALS_IN_PRIMARY),
                            (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
     }
+}
+
+// Same tiles as CopySecondaryTilesetToVramUsingHeap, but in this frame rather
+// than over the next several. A camera transition swaps the map's secondary
+// tileset while the screen is live: the palettes land immediately, but the
+// queued load's tiles arrive over the following frames, so the map would be
+// drawn with the tileset it is replacing under the palettes of the one
+// replacing it. Vanilla showed seven tiles past a map edge and never noticed.
+void CopySecondaryTilesetToVramNow(struct MapLayout const *mapLayout)
+{
+    CopyTilesetToVramDirect(mapLayout->secondaryTileset, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY, NUM_TILES_IN_PRIMARY);
 }
 
 void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)

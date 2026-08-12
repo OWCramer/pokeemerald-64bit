@@ -34,6 +34,10 @@ extern struct BgExtMap gBgExt[4];
 // VRAM layout. See docs/WIDE_VIEW_TILESET_BANKS.md.
 extern u32 gTilesetBankTileDelta[MAX_TILESET_BANKS][2];
 
+// First palette of the bank, added to a tilemap entry's 4-bit palette number.
+// Zero for the map the player is on, which draws from the stock layout.
+extern u32 gTilesetBankPalBase[MAX_TILESET_BANKS];
+
 void SetRenderSize(int w, int h);
 void SetRenderExpansionAllowed(bool32 allowed);
 void GetRequestedRenderSize(int *w, int *h);
