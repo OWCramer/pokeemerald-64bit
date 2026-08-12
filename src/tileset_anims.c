@@ -7,11 +7,13 @@
 #include "battle_transition.h"
 #include "fieldmap.h"
 
+// Twice vanilla's 20: every frame is queued once for the stock VRAM layout and
+// once for the tileset slot the field actually draws from.
 static EWRAM_DATA struct {
     const u16 *src;
     u16 *dest;
     u16 size;
-} sTilesetDMA3TransferBuffer[20] = {0};
+} sTilesetDMA3TransferBuffer[40] = {0};
 
 static u8 sTilesetDMA3TransferBufferSize;
 static u16 sPrimaryTilesetAnimCounter;
@@ -20,6 +22,19 @@ static u16 sSecondaryTilesetAnimCounter;
 static u16 sSecondaryTilesetAnimCounterMax;
 static void (*sPrimaryTilesetAnimCallback)(u16);
 static void (*sSecondaryTilesetAnimCallback)(u16);
+
+// The tileset each installed callback belongs to, and whichever of the two is
+// running right now. A callback's VRAM destinations are tile indices in the
+// stock layout, which say nothing about which tileset owns them -- and the
+// answer cannot be taken from gMapHeader, because a callback outlives the map
+// that installed it by however long it takes the next map to re-install one.
+// Getting that wrong writes one tileset's animation into another's slot, and
+// slots are permanent, so a single frame of it poisons a tileset for the rest
+// of the session. That is what put water and flowers into the floor of every
+// building sharing gTileset_Building.
+static const struct Tileset *sPrimaryTilesetAnimTileset;
+static const struct Tileset *sSecondaryTilesetAnimTileset;
+static const struct Tileset *sAnimatingTileset;
 
 static void _InitPrimaryTilesetAnimation(void);
 static void _InitSecondaryTilesetAnimation(void);
@@ -550,15 +565,57 @@ static void ResetTilesetAnimBuffer(void)
     CpuFill32(0, sTilesetDMA3TransferBuffer, sizeof sTilesetDMA3TransferBuffer);
 }
 
-static void AppendTilesetAnimToBuffer(const u16 *src, u16 *dest, u16 size)
+static void QueueTilesetAnimTransfer(const u16 *src, u16 *dest, u16 size)
 {
-    if (sTilesetDMA3TransferBufferSize < 20)
+    if (sTilesetDMA3TransferBufferSize < ARRAY_COUNT(sTilesetDMA3TransferBuffer))
     {
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].src = src;
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].dest = dest;
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].size = size;
         sTilesetDMA3TransferBufferSize ++;
     }
+}
+
+// Every animation destination in this file is a tile of the current map's
+// tileset, addressed in the stock VRAM layout. The field draws from tileset
+// slots instead, so the frame has to be written there as well.
+//
+// One tileset is one slot, however many maps share it, so this is a single
+// extra transfer rather than a copy per map -- and every map using that tileset
+// animates in step for free. That is what covers all of the outdoor animation:
+// water, waterfalls, shorelines and flowers all live in gTileset_General, the
+// primary every Hoenn overworld map uses.
+//
+// A neighbouring map whose own secondary animates -- a town fountain, a flag --
+// still shows its first frame, because only the current map's animation
+// callbacks are running. That needs a set of callbacks and counters per
+// tileset, not just somewhere to put the result.
+static void RedirectTilesetAnimToSlot(const u16 *src, u16 *dest, u16 size)
+{
+    u32 tile = (u32)((u8 *)dest - (u8 *)BG_VRAM) / TILE_SIZE_4BPP;
+    u32 slotBase;
+
+    // Only ever called from inside a callback, so the owning tileset is known
+    // exactly rather than inferred.
+    if (tile >= NUM_TILES_TOTAL || sAnimatingTileset == NULL)
+        return;
+
+    // A primary's tiles are addressed from 0 and a secondary's from
+    // NUM_TILES_IN_PRIMARY, but a slot holds either starting at 0.
+    if (tile >= NUM_TILES_IN_PRIMARY)
+        tile -= NUM_TILES_IN_PRIMARY;
+
+    slotBase = GetTilesetSlotTileBase(sAnimatingTileset);
+    if (slotBase == 0)
+        return;
+
+    QueueTilesetAnimTransfer(src, (u16 *)((u8 *)BG_VRAM + (slotBase + tile) * TILE_SIZE_4BPP), size);
+}
+
+static void AppendTilesetAnimToBuffer(const u16 *src, u16 *dest, u16 size)
+{
+    QueueTilesetAnimTransfer(src, dest, size);
+    RedirectTilesetAnimToSlot(src, dest, size);
 }
 
 void TransferTilesetAnimsBuffer(void)
@@ -592,9 +649,16 @@ void UpdateTilesetAnimations(void)
         sSecondaryTilesetAnimCounter = 0;
 
     if (sPrimaryTilesetAnimCallback)
+    {
+        sAnimatingTileset = sPrimaryTilesetAnimTileset;
         sPrimaryTilesetAnimCallback(sPrimaryTilesetAnimCounter);
+    }
     if (sSecondaryTilesetAnimCallback)
+    {
+        sAnimatingTileset = sSecondaryTilesetAnimTileset;
         sSecondaryTilesetAnimCallback(sSecondaryTilesetAnimCounter);
+    }
+    sAnimatingTileset = NULL;
 }
 
 static void _InitPrimaryTilesetAnimation(void)
@@ -602,6 +666,7 @@ static void _InitPrimaryTilesetAnimation(void)
     sPrimaryTilesetAnimCounter = 0;
     sPrimaryTilesetAnimCounterMax = 0;
     sPrimaryTilesetAnimCallback = NULL;
+    sPrimaryTilesetAnimTileset = gMapHeader.mapLayout->primaryTileset;
     if (gMapHeader.mapLayout->primaryTileset && gMapHeader.mapLayout->primaryTileset->callback)
         gMapHeader.mapLayout->primaryTileset->callback();
 }
@@ -611,6 +676,7 @@ static void _InitSecondaryTilesetAnimation(void)
     sSecondaryTilesetAnimCounter = 0;
     sSecondaryTilesetAnimCounterMax = 0;
     sSecondaryTilesetAnimCallback = NULL;
+    sSecondaryTilesetAnimTileset = gMapHeader.mapLayout->secondaryTileset;
     if (gMapHeader.mapLayout->secondaryTileset && gMapHeader.mapLayout->secondaryTileset->callback)
         gMapHeader.mapLayout->secondaryTileset->callback();
 }

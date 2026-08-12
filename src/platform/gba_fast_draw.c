@@ -145,17 +145,52 @@ struct bgPriority {
 // heights must be powers of two in tiles so the wrap is a mask.
 struct BgExtMap gBgExt[4];
 
-// One tilemap entry. Flat maps are row-major; GBA maps are 32x32 screenblocks,
-// so a 512px-wide one jumps a whole screenblock at tile 32.
-static inline uint32_t FetchBgEntry(const uint16_t *bgmap, unsigned int rowLoc,
-                                    unsigned int tx, unsigned int mapWidth, bool flatMap)
+// One tilemap entry, plus the tileset bank it is to be decoded against in the
+// high half. Flat maps are row-major; GBA maps are 32x32 screenblocks, so a
+// 512px-wide one jumps a whole screenblock at tile 32.
+//
+// The entry itself stays a plain 16-bit GBA one. Widening it would have been
+// the other way to carry the bank, but the field tilemaps are handed to bg.c
+// through SetBgTilemapBuffer, and anything there that wrote a u16 entry into a
+// u32 buffer would corrupt it silently. A separate plane cannot be mistaken for
+// a tilemap by any code that does not know about it.
+static inline uint32_t FetchBgEntry(const uint16_t *bgmap, const uint8_t *bankmap,
+                                    unsigned int rowLoc, unsigned int tx,
+                                    unsigned int mapWidth, bool flatMap)
 {
     if (flatMap)
-        return bgmap[rowLoc + (tx & (mapWidth - 1))];
+    {
+        unsigned int i = rowLoc + (tx & (mapWidth - 1));
+        return bgmap[i] | ((uint32_t)(bankmap != NULL ? bankmap[i] : 0) << 16);
+    }
     if ((tx & 63) > 31 && mapWidth > 32)
         return bgmap[rowLoc + (tx & 31) + 0x400];
     return bgmap[rowLoc + (tx & 31)];
 }
+
+// A tileset id is only meaningful against a tileset pair, and the two halves of
+// that pair are stored separately -- one slot per tileset in the game, so a
+// primary shared by seventy maps is held once. Which slot a tile comes from is
+// decided by the same split the metatile id already uses: below
+// NUM_TILES_IN_PRIMARY it is the pair's primary, at or above it the secondary.
+//
+// Rather than branch on that in the inner loop, each bank publishes the delta
+// to add for each half, indexed by the top bit of the 10-bit tile id. Bank 0 --
+// no bank -- has both deltas zero, so an ordinary BG decodes exactly as it did
+// before any of this existed.
+u32 gTilesetBankTileDelta[MAX_TILESET_BANKS][2];
+u32 gTilesetBankPalBase[MAX_TILESET_BANKS];
+
+// Split out of the twelve places that decode an entry so a bank cannot be
+// honoured in some of them and forgotten in the rest.
+#define DECODE_BG_ENTRY()                                                  \
+    do {                                                                   \
+        unsigned int bank_ = entry >> 16;                                  \
+        unsigned int tile_ = entry & 0x3FF;                                \
+        tileNum = tile_ + gTilesetBankTileDelta[bank_][tile_ >> 9];        \
+        paletteNum = ((entry >> 12) & 0xF) + gTilesetBankPalBase[bank_];           \
+        palBase = is8bpp ? 0 : (paletteNum << 4);                          \
+    } while (0)
 
 static const uint16_t bgMapSizes[][2] =
 {
@@ -258,6 +293,7 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    const uint8_t *bankmap = flatMap ? gBgExt[bgNum].bank : NULL;
     // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
     // menu -- and that tilemap wraps, so on a wider viewport it repeats across
     // the screen. Only an extended (flat, window-sized) BG spans the whole
@@ -325,10 +361,9 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
-    unsigned int tileNum = entry & 0x3FF;
-    unsigned int paletteNum = (entry >> 12) & 0xF;
-    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX, mapWidth, flatMap);
+    unsigned int tileNum, paletteNum, palBase;
+    DECODE_BG_ENTRY();
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -399,10 +434,8 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
-        tileNum = entry & 0x3FF;
-        paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+        entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
+        DECODE_BG_ENTRY();
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
@@ -456,10 +489,8 @@ static void RenderBGScanlineWinBlend(int bgNum, uint16_t control, uint16_t hoffs
         x += 8;
     }
     //draw right most tile
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
-    tileNum = entry & 0x3FF;
-    paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
+    DECODE_BG_ENTRY();
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -515,6 +546,7 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    const uint8_t *bankmap = flatMap ? gBgExt[bgNum].bank : NULL;
     // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
     // menu -- and that tilemap wraps, so on a wider viewport it repeats across
     // the screen. Only an extended (flat, window-sized) BG spans the whole
@@ -582,10 +614,9 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
-    unsigned int tileNum = entry & 0x3FF;
-    unsigned int paletteNum = (entry >> 12) & 0xF;
-    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX, mapWidth, flatMap);
+    unsigned int tileNum, paletteNum, palBase;
+    DECODE_BG_ENTRY();
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -641,10 +672,8 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
-        tileNum = entry & 0x3FF;
-        paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+        entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
+        DECODE_BG_ENTRY();
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
@@ -698,10 +727,8 @@ static void RenderBGScanlineWin(int bgNum, uint16_t control, uint16_t hoffs, uin
         x += 8;
     }
     //draw right most tile
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
-    tileNum = entry & 0x3FF;
-    paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
+    DECODE_BG_ENTRY();
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -757,6 +784,7 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    const uint8_t *bankmap = flatMap ? gBgExt[bgNum].bank : NULL;
     // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
     // menu -- and that tilemap wraps, so on a wider viewport it repeats across
     // the screen. Only an extended (flat, window-sized) BG spans the whole
@@ -828,10 +856,9 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
-    unsigned int tileNum = entry & 0x3FF;
-    unsigned int paletteNum = (entry >> 12) & 0xF;
-    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX, mapWidth, flatMap);
+    unsigned int tileNum, paletteNum, palBase;
+    DECODE_BG_ENTRY();
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -894,10 +921,8 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
-        tileNum = entry & 0x3FF;
-        paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+        entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
+        DECODE_BG_ENTRY();
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
@@ -951,10 +976,8 @@ static void RenderBGScanlineBlend(int bgNum, uint16_t control, uint16_t hoffs, u
         x += 8;
     }
     //draw right most tile
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
-    tileNum = entry & 0x3FF;
-    paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
+    DECODE_BG_ENTRY();
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else
@@ -1008,6 +1031,7 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int mapWidthInPixels = mapWidth * 8;
     unsigned int mapHeightInPixels = mapHeight * 8;
     uint16_t *bgmap = flatMap ? gBgExt[bgNum].map : (uint16_t *)BG_SCREEN_ADDR(screenBaseBlock);
+    const uint8_t *bankmap = flatMap ? gBgExt[bgNum].bank : NULL;
     // A BG still on a normal GBA tilemap holds a 240x160 image -- a text box, a
     // menu -- and that tilemap wraps, so on a wider viewport it repeats across
     // the screen. Only an extended (flat, window-sized) BG spans the whole
@@ -1079,10 +1103,9 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     unsigned int tileY = yy & 7;
     uint32_t entry;
     
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX, mapWidth, flatMap);
-    unsigned int tileNum = entry & 0x3FF;
-    unsigned int paletteNum = (entry >> 12) & 0xF;
-    unsigned int palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX, mapWidth, flatMap);
+    unsigned int tileNum, paletteNum, palBase;
+    DECODE_BG_ENTRY();
     uint32_t tileLoc;
     uint32_t pixel;
     unsigned int x = 0;
@@ -1134,10 +1157,8 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
     //draw all middle pixels
     for (int currTile = 1; currTile < ( (gRenderWidth / 8)); currTile++)
     {
-        entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
-        tileNum = entry & 0x3FF;
-        paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+        entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + currTile, mapWidth, flatMap);
+        DECODE_BG_ENTRY();
         if (entry & (1 << 11))
             tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
         else
@@ -1191,10 +1212,8 @@ static void RenderBGScanlineNoEffect(int bgNum, uint16_t control, uint16_t hoffs
         x += 8;
     }
     //draw right most tile
-    entry = FetchBgEntry(bgmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
-    tileNum = entry & 0x3FF;
-    paletteNum = (entry >> 12) & 0xF;
-        palBase = is8bpp ? 0 : (paletteNum << 4);
+    entry = FetchBgEntry(bgmap, bankmap, startTileYLoc, startTileX + (gRenderWidth / 8), mapWidth, flatMap);
+    DECODE_BG_ENTRY();
     if (entry & (1 << 11))
         tileLoc = (tileNum * (bitsPerPixel * 8)) + (7 - tileY)*bitsPerPixel;
     else

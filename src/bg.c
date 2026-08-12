@@ -58,7 +58,10 @@ void ResetBgs(void)
     // otherwise keep reading the overworld's heap buffer and render it as
     // garbage, which is what a soft reset did to the title screen.
     for (i = 0; i < 4; i++)
+    {
         gBgExt[i].map = NULL;
+        gBgExt[i].bank = NULL;
+    }
 
     ResetBgControlStructs();
     sGpuBgConfigs.bgVisibilityAndMode = 0;
@@ -329,7 +332,10 @@ void InitBgsFromTemplates(u8 bgMode, const struct BgTemplate *templates, u8 numT
     // call. Without this a later screen would read the field's heap buffer.
     SetRenderExpansionAllowed(FALSE);
     for (u32 i = 0; i < 4; i++)
+    {
         gBgExt[i].map = NULL;
+        gBgExt[i].bank = NULL;
+    }
 
     int i;
     u8 bg;

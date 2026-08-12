@@ -542,6 +542,7 @@ static void InitMapView(void)
     ResetFieldCamera();
     CopyMapTilesetsToVram(gMapHeader.mapLayout);
     LoadMapTilesetPalettes(gMapHeader.mapLayout);
+    LoadTilesetBankPalettes();
     DrawWholeMapView();
     InitTilesetAnimations();
 }
@@ -804,6 +805,7 @@ bool8 SetDiveWarpDive(u16 x, u16 y)
 void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
 {
     s32 paletteIndex;
+    u8 bank;
 
     SetWarpDestination(mapGroup, mapNum, WARP_ID_NONE, -1, -1);
 
@@ -826,11 +828,39 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
     Overworld_ClearSavedMusic();
     RunOnTransitionMapScript();
     InitMap();
-    CopySecondaryTilesetToVramUsingHeap(gMapHeader.mapLayout);
+    // Synchronous, not the usual queued load: the palettes below land this
+    // frame, and tiles arriving a few frames later would draw the map with the
+    // tileset it is replacing.
+    CopySecondaryTilesetToVramNow(gMapHeader.mapLayout);
     LoadSecondaryTilesetPalette(gMapHeader.mapLayout);
+    // InitMap above rebuilt the layout, so this map's connections -- and any
+    // tileset pair among them being seen for the first time -- have changed.
+    // Banks already loaded are left exactly as they are.
+    LoadTilesetBankPalettes();
 
     for (paletteIndex = NUM_PALS_IN_PRIMARY; paletteIndex < NUM_PALS_TOTAL; paletteIndex++)
         ApplyWeatherColorMapToPal(paletteIndex);
+
+    // A bank seen for the first time loads with unmapped colours, and this path
+    // never runs the weather fade-in that would otherwise cover it. Without
+    // this a map is lit as if the weather were clear until the player warps.
+    for (bank = 1; bank < GetTilesetBankCount(); bank++)
+    {
+        for (paletteIndex = 0; paletteIndex < TILESET_BANK_NUM_PALS; paletteIndex++)
+            ApplyWeatherColorMapToPal(TILESET_BANK_PAL_BASE(bank) + paletteIndex);
+    }
+
+    // Push the palettes to hardware now, with the tiles.
+    //
+    // Everything above changed both: CopySecondaryTilesetToVramNow wrote VRAM
+    // this instant, but palettes only reach the hardware buffer when the vblank
+    // handler runs TransferPlttBuffer -- and the frame is drawn *before* that
+    // handler, so the map would be shown for one frame with the tileset it just
+    // gained under the colours of the one it just lost. Vanilla never had the
+    // mismatch because its tiles went through the same vblank as its palettes;
+    // this path loads them synchronously so they would otherwise arrive a frame
+    // apart.
+    CpuCopy16(gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
 
     InitSecondaryTilesetAnimation();
     UpdateLocationHistoryForRoamer();
@@ -1882,6 +1912,7 @@ static bool32 LoadMapInStepsLink(u8 *state)
         if (FreeTempTileDataBuffersIfPossible() != TRUE)
         {
             LoadMapTilesetPalettes(gMapHeader.mapLayout);
+            LoadTilesetBankPalettes();
             (*state)++;
         }
         break;
@@ -1957,6 +1988,7 @@ static bool32 LoadMapInStepsLocal(u8 *state, bool32 a2)
         if (FreeTempTileDataBuffersIfPossible() != TRUE)
         {
             LoadMapTilesetPalettes(gMapHeader.mapLayout);
+            LoadTilesetBankPalettes();
             (*state)++;
         }
         break;
@@ -2054,6 +2086,7 @@ static bool32 ReturnToFieldLink(u8 *state)
         if (FreeTempTileDataBuffersIfPossible() != TRUE)
         {
             LoadMapTilesetPalettes(gMapHeader.mapLayout);
+            LoadTilesetBankPalettes();
             (*state)++;
         }
         break;

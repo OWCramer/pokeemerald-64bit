@@ -23,6 +23,10 @@
 
 #define MAX_MAP_DATA_SIZE 131072
 
+// MAX_TILESET_BANKS -- how many distinct tileset pairs can be on screen at
+// once -- lives in include/gba/defines.h, next to the VRAM and palette sizes
+// it decides.
+
 #define NUM_TILES_PER_METATILE 8
 
 // Map coordinates are offset by 7 when using the map
@@ -45,6 +49,14 @@
 extern struct BackupMapLayout gBackupMapLayout;
 
 s32 MapGridGetMetatileIdAt(s32 x, s32 y);
+u8 MapGridGetTilesetBankAt(s32 x, s32 y);
+const struct Tileset *GetTilesetBankPrimary(u8 bank);
+const struct Tileset *GetTilesetBankSecondary(u8 bank);
+u8 GetTilesetBankCount(void);
+void LoadTilesetBankPalettes(void);
+void InitTilesetBanks(void);
+u8 GetCurrentTilesetBank(void);
+u32 GetTilesetSlotTileBase(const struct Tileset *tileset);
 s32 MapGridGetMetatileBehaviorAt(s32 x, s32 y);
 void MapGridSetMetatileIdAt(s32 x, s32 y, u16 metatile);
 void MapGridSetMetatileEntryAt(s32 x, s32 y, u16 metatile);
@@ -67,6 +79,7 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout);
 void LoadMapTilesetPalettes(struct MapLayout const *mapLayout);
 void LoadSecondaryTilesetPalette(struct MapLayout const *mapLayout);
 void CopySecondaryTilesetToVramUsingHeap(struct MapLayout const *mapLayout);
+void CopySecondaryTilesetToVramNow(struct MapLayout const *mapLayout);
 void CopyPrimaryTilesetToVram(struct MapLayout const *mapLayout);
 void CopySecondaryTilesetToVram(struct MapLayout const *mapLayout);
 const struct MapHeader *const GetMapHeaderFromConnection(const struct MapConnection *connection);

@@ -590,6 +590,16 @@ void process_groups(string groups_filepath, string output_asm, string output_c) 
     write_text_file(output_c + sep + "map_groups.h", map_header_text);
 }
 
+// A layout without one of its tilesets writes a null pointer. Emitting a bare 0
+// makes it indistinguishable from an integer field, and the 64-bit builds widen
+// only .4byte *symbols* to .quad -- which left such a layout four bytes short
+// and its last field reading into whatever followed it. NULL is a symbol, and
+// assembles to the same four zero bytes the GBA build had before.
+string tileset_symbol(const Json &layout, const string &field) {
+    string name = json_to_string(layout, field, true);
+    return (name.empty() || name == "0") ? "NULL" : name;
+}
+
 string generate_layout_headers_text(Json layouts_data) {
     ostringstream text;
 
@@ -610,8 +620,8 @@ string generate_layout_headers_text(Json layouts_data) {
              << "\t.4byte " << json_to_string(layout, "height") << "\n"
              << "\t.4byte " << border_label << "\n"
              << "\t.4byte " << blockdata_label << "\n"
-             << "\t.4byte " << json_to_string(layout, "primary_tileset") << "\n"
-             << "\t.4byte " << json_to_string(layout, "secondary_tileset") << "\n";
+             << "\t.4byte " << tileset_symbol(layout, "primary_tileset") << "\n"
+             << "\t.4byte " << tileset_symbol(layout, "secondary_tileset") << "\n";
         if (version == "firered") {
             text << "\t.byte " << json_to_string(layout, "border_width") << "\n"
                  << "\t.byte " << json_to_string(layout, "border_height") << "\n"
@@ -651,6 +661,10 @@ string generate_layouts_constants_text(Json layouts_data) {
             text << "#define " << json_to_string(layout, "id") << " " << i << "\n";
         i++;
     }
+
+    // Lets code walk gMapLayouts, which is how the tileset banks find every
+    // tileset in the game at boot.
+    text << "\n#define LAYOUTS_COUNT " << (i - 1) << "\n";
 
     text << get_include_guard_end(guard_name);
 
