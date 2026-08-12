@@ -95,7 +95,7 @@ struct FilledMapRect
     u8 bank;
 };
 
-#define MAX_FILLED_MAP_RECTS 32
+#define MAX_FILLED_MAP_RECTS 48
 static struct FilledMapRect sFilledMapRects[MAX_FILLED_MAP_RECTS];
 static u8 sFilledMapRectCount;
 
@@ -367,10 +367,14 @@ static void RecordFilledMapRect(s32 x, s32 y, s32 width, s32 height, const u16 *
 }
 
 // The filled map a cell with no data of its own belongs to: the nearest one it
-// sits directly above, below, or beside. A cell diagonally off every map
-// belongs to none of them and falls back to the map the player is on, which is
-// the old behaviour and only ever shows in a far corner.
-static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
+// sits directly above or below, or failing that the nearest one it sits beside.
+//
+// Choosing purely by distance instead let the winner flip along the line where
+// "so far above map A" and "so far left of map B" traded off, which drew a
+// diagonal staircase of one border cutting into the other across every corner.
+// Settling the axis first keeps every seam straight, which is what a boundary
+// between two routes looks like anyway.
+static const struct FilledMapRect *FindBorderOwnerOnAxis(s32 x, s32 y, bool32 vertical)
 {
     const struct FilledMapRect *best = NULL;
     s32 bestDistance = 0x7FFF;
@@ -381,8 +385,10 @@ static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
         const struct FilledMapRect *rect = &sFilledMapRects[i];
         s32 distance;
 
-        if (x >= rect->x && x < rect->x + rect->width)
+        if (vertical)
         {
+            if (x < rect->x || x >= rect->x + rect->width)
+                continue;
             if (y < rect->y)
                 distance = rect->y - y;
             else if (y >= rect->y + rect->height)
@@ -390,16 +396,16 @@ static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
             else
                 distance = 0;
         }
-        else if (y >= rect->y && y < rect->y + rect->height)
-        {
-            if (x < rect->x)
-                distance = rect->x - x;
-            else
-                distance = x - (rect->x + rect->width) + 1;
-        }
         else
         {
-            continue;
+            if (y < rect->y || y >= rect->y + rect->height)
+                continue;
+            if (x < rect->x)
+                distance = rect->x - x;
+            else if (x >= rect->x + rect->width)
+                distance = x - (rect->x + rect->width) + 1;
+            else
+                distance = 0;
         }
 
         if (distance < bestDistance)
@@ -410,6 +416,16 @@ static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
     }
 
     return best;
+}
+
+static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
+{
+    const struct FilledMapRect *owner = FindBorderOwnerOnAxis(x, y, TRUE);
+
+    if (owner == NULL)
+        owner = FindBorderOwnerOnAxis(x, y, FALSE);
+
+    return owner;
 }
 
 // Parity stays global rather than relative to the owning map: it is what vanilla
@@ -523,42 +539,106 @@ static void FillMapRegion(const struct MapHeader *mapHeader, s32 x, s32 y)
         FillConnection(x, y, mapHeader, srcX, srcY, width, height);
 }
 
-// The expanded viewport sees further than the maps this one is joined to:
-// standing on Route 110 you can see clear past Mauville into Route 111. Those
-// are not connections of the current map, so nothing filled them and they fell
-// back to border metatiles -- which is why Route 110's ocean was drawn through
-// the middle of Mauville, and Route 111's dirt through Route 110. It also meant
-// the same piece of world changed appearance depending on which map the player
-// happened to be standing on.
+// Fills every map that reaches this layout, however many connections away.
 //
-// One more level of connections covers what the margin can show. Deeper would
-// need a visited set and cycle handling to buy very little more on screen.
-static void FillConnectionsOfConnection(const struct MapHeader *mapHeader, const struct MapHeader *from,
-                                        s32 originX, s32 originY)
+// The margin is 64 metatiles on each side and the median route is 40 wide by 22
+// tall, so the viewport routinely spans three maps vertically -- a fixed depth
+// of two left the third as border metatiles. Geometry is the honest bound
+// instead: walk the connection graph outward and stop at maps whose rectangle
+// misses the layout entirely, which is what makes this terminate at all.
+//
+// Maps reached twice are filled once. The graph has cycles (A joins B joins A),
+// and a second visit would also be a second FillConnection over data the player
+// can walk on.
+static void FillReachableMaps(const struct MapHeader *mapHeader)
 {
+    struct PendingMap
+    {
+        const struct MapHeader *header;
+        s32 x;
+        s32 y;
+    };
+    struct PendingMap queue[MAX_FILLED_MAP_RECTS];
+    const struct MapHeader *visited[MAX_FILLED_MAP_RECTS];
+    u32 head = 0, tail = 0, visitedCount = 0;
     s32 count, i, x, y;
     const struct MapConnection *connection;
     const struct MapHeader *cMap;
 
-    if (mapHeader->connections == NULL || mapHeader->connections->connections == NULL)
-        return;
-
-    count = mapHeader->connections->count;
-    connection = mapHeader->connections->connections;
-    for (i = 0; i < count; i++, connection++)
+    // The current map and its own connections are already placed by the vanilla
+    // path, which also sets the flags the camera reads. Seed from them.
+    visited[visitedCount++] = mapHeader;
+    if (mapHeader->connections != NULL && mapHeader->connections->connections != NULL)
     {
-        cMap = GetMapHeaderFromConnection(connection);
-        // Skip the way we came: already filled, and at the same place.
-        if (cMap == NULL || cMap == from)
+        count = mapHeader->connections->count;
+        connection = mapHeader->connections->connections;
+        for (i = 0; i < count; i++, connection++)
+        {
+            cMap = GetMapHeaderFromConnection(connection);
+            if (cMap == NULL || visitedCount >= MAX_FILLED_MAP_RECTS || tail >= MAX_FILLED_MAP_RECTS)
+                continue;
+            if (!GetConnectionOrigin(mapHeader, connection, cMap, MAP_BORDER_TOTAL, MAP_BORDER_TOTAL, &x, &y))
+                continue;
+            visited[visitedCount++] = cMap;
+            queue[tail].header = cMap;
+            queue[tail].x = x;
+            queue[tail].y = y;
+            tail++;
+        }
+    }
+
+    while (head < tail)
+    {
+        const struct MapHeader *from = queue[head].header;
+        s32 fromX = queue[head].x;
+        s32 fromY = queue[head].y;
+        u32 j;
+
+        head++;
+
+        if (from->connections == NULL || from->connections->connections == NULL)
             continue;
-        if (GetConnectionOrigin(mapHeader, connection, cMap, originX, originY, &x, &y))
+
+        count = from->connections->count;
+        connection = from->connections->connections;
+        for (i = 0; i < count; i++, connection++)
+        {
+            cMap = GetMapHeaderFromConnection(connection);
+            if (cMap == NULL)
+                continue;
+            if (!GetConnectionOrigin(from, connection, cMap, fromX, fromY, &x, &y))
+                continue;
+
+            // Off the layout entirely: nothing to draw, and nothing beyond it
+            // could be any closer.
+            if (x >= gBackupMapLayout.width || y >= gBackupMapLayout.height
+             || x + cMap->mapLayout->width <= 0 || y + cMap->mapLayout->height <= 0)
+                continue;
+
+            for (j = 0; j < visitedCount; j++)
+            {
+                if (visited[j] == cMap)
+                    break;
+            }
+            if (j != visitedCount)
+                continue;
+
+            if (visitedCount >= MAX_FILLED_MAP_RECTS || tail >= MAX_FILLED_MAP_RECTS)
+                return;
+
+            visited[visitedCount++] = cMap;
             FillMapRegion(cMap, x, y);
+            queue[tail].header = cMap;
+            queue[tail].x = x;
+            queue[tail].y = y;
+            tail++;
+        }
     }
 }
 
 static void InitBackupMapLayoutConnections(const struct MapHeader *mapHeader)
 {
-    s32 count, i, offset, x, y;
+    s32 count, i, offset;
     const struct MapConnection *connection;
     const struct MapHeader *cMap;
 
@@ -593,16 +673,9 @@ static void InitBackupMapLayoutConnections(const struct MapHeader *mapHeader)
         }
     }
 
-    // Second pass, so a map two hops away can never land on top of one the
-    // player can actually walk to.
-    connection = mapHeader->connections->connections;
-    for (i = 0; i < count; i++, connection++)
-    {
-        cMap = GetMapHeaderFromConnection(connection);
-        if (cMap != NULL
-         && GetConnectionOrigin(mapHeader, connection, cMap, MAP_BORDER_TOTAL, MAP_BORDER_TOTAL, &x, &y))
-            FillConnectionsOfConnection(cMap, mapHeader, x, y);
-    }
+    // Then everything further out, after the maps the player can walk to, so a
+    // distant map can never land on top of a neighbouring one.
+    FillReachableMaps(mapHeader);
 }
 
 static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHeader, s32 x2, s32 y2, s32 width, s32 height)
