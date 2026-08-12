@@ -200,6 +200,26 @@ static const uint16_t bgMapSizes[][2] =
     {64, 64},
 };
 
+// REG_BLDALPHA is volatile, so a caller blending a whole scanline re-reads it
+// from memory twice per pixel and the compiler is not allowed to stop it.
+// Callers inside a pixel loop read it once and use this.
+static uint16_t alphaBlendColorEv(uint16_t targetA, uint16_t targetB, unsigned int eva, unsigned int evb)
+{
+    // shift right by 4 = division by 16
+    unsigned int r = ((getRedChannel(targetA) * eva) + (getRedChannel(targetB) * evb)) >> 4;
+    unsigned int g = ((getGreenChannel(targetA) * eva) + (getGreenChannel(targetB) * evb)) >> 4;
+    unsigned int b = ((getBlueChannel(targetA) * eva) + (getBlueChannel(targetB) * evb)) >> 4;
+
+    if (r > 31)
+        r = 31;
+    if (g > 31)
+        g = 31;
+    if (b > 31)
+        b = 31;
+
+    return r | (g << 5) | (b << 10) | (1 << 15);
+}
+
 static uint16_t alphaBlendColor(uint16_t targetA, uint16_t targetB)
 {
     unsigned int eva = REG_BLDALPHA & 0x1F;
@@ -2301,11 +2321,19 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
     }
 }
 
-static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn, int32_t oamX, int32_t oamY)
+static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn, int32_t oamX, int32_t oamY, int repeats)
 {
     struct OamData *oam = &((struct OamData *)OAM)[SpriteIndex];
     void *objtiles = VRAM_ + 0x10000;
-    unsigned int blendMode = (REG_BLDCNT >> 6) & 3;
+    // Read once for the whole sprite rather than per pixel. These are volatile,
+    // so every mention inside the pixel loops below was a load the compiler was
+    // forbidden from hoisting -- and a tiling sprite runs those loops across the
+    // entire viewport. They are set between scanlines, never within one.
+    const uint16_t bldcnt = REG_BLDCNT;
+    const uint16_t winout = REG_WINOUT;
+    const unsigned int blendEva = REG_BLDALPHA & 0x1F;
+    const unsigned int blendEvb = (REG_BLDALPHA >> 8) & 0x1F;
+    unsigned int blendMode = (bldcnt >> 6) & 3;
     bool winShouldBlendPixel = true;
     unsigned int width;
     unsigned int height;
@@ -2351,6 +2379,10 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
     // Horizontal only -- see the note above; vcount already carries the
     // vertical shift.
     x += gRenderOffsetX;
+    // A tiling sprite draws the same row of pixels at every repeat, so
+    // everything below up to the block loop -- the size, the flips, the palette,
+    // the row of tile data -- is worked out once and only x moves.
+    int32_t baseX = x;
 
     y += half_height;
 
@@ -2382,11 +2414,16 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
             blockIncrement = 1;
         }
         
+        int tile_y = tex_y & (TILE_HEIGHT-1);
+        int block_y = tex_y / TILE_HEIGHT;
+        int blockRowStride = (REG_DISPCNT & DISPCNT_OBJ_1D_MAP ? (width / 8) : 16);
+
+        for (int rep = 0; rep < repeats; rep++)
+        {
+        x = baseX + rep * (int32_t)width;
         for (int block_x = blockStart; block_x != blockEnd; block_x += blockIncrement)
         {
-            int tile_y = tex_y & (TILE_HEIGHT-1);
-            int block_y = tex_y / TILE_HEIGHT;
-            int block_offset = ((block_y * (REG_DISPCNT & DISPCNT_OBJ_1D_MAP ? (width / 8) : 16)) + block_x);
+            int block_offset = ((block_y * blockRowStride) + block_x);
             uint8_t* pixelData = &tiledata[(oam->tileNum + block_offset) * TILE_SIZE_4BPP + (tile_y * 4)];
             uint32_t pixel32 = *(uint32_t*)pixelData; //load whole tile worth of palette pixels
             
@@ -2397,16 +2434,16 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                     if (blendMode != 0 || isSemiTransparent) //Windowing and blending
                     {
                         #define writeSpritePixelWinBlend(pixel, x) \
-                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
+                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((winout & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
                                 uint16_t color = palette[pixel]; \
-                                winShouldBlendPixel = (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_CLR); \
+                                winShouldBlendPixel = (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && winout & WINOUT_WIN01_CLR); \
                                 \
-                                if (((blendMode == 1 && REG_BLDCNT & BLDCNT_TGT1_OBJ) && winShouldBlendPixel) || isSemiTransparent) \
+                                if (((blendMode == 1 && bldcnt & BLDCNT_TGT1_OBJ) && winShouldBlendPixel) || isSemiTransparent) \
                                 { \
-                                    if (scanline->bgMask[x] & (REG_BLDCNT >> 8)) \
-                                        color = alphaBlendColor(color, pixels[x]); \
+                                    if (scanline->bgMask[x] & (bldcnt >> 8)) \
+                                        color = alphaBlendColorEv(color, pixels[x], blendEva, blendEvb); \
                                 } \
-                                else if(REG_BLDCNT & BLDCNT_TGT1_OBJ && winShouldBlendPixel) \
+                                else if(bldcnt & BLDCNT_TGT1_OBJ && winShouldBlendPixel) \
                                 { \
                                     switch (blendMode) \
                                     { \
@@ -2449,7 +2486,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                     else //Windowing
                     {
                         #define writeSpritePixelWin(pixel, x) \
-                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
+                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((winout & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
                                 pixels[x] = palette[pixel] | (1 << 15); \
                                 scanline->bgMask[x] = (1 << 4); \
                             }
@@ -2487,12 +2524,12 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                         if (pixel) { \
                             uint16_t color = palette[pixel]; \
                             \
-                            if ( (blendMode == 1 && REG_BLDCNT & BLDCNT_TGT1_OBJ) || isSemiTransparent) \
+                            if ( (blendMode == 1 && bldcnt & BLDCNT_TGT1_OBJ) || isSemiTransparent) \
                             { \
-                                if (scanline->bgMask[x] & (REG_BLDCNT >> 8)) \
-                                    color = alphaBlendColor(color, pixels[x]); \
+                                if (scanline->bgMask[x] & (bldcnt >> 8)) \
+                                    color = alphaBlendColorEv(color, pixels[x], blendEva, blendEvb); \
                             } \
-                            else if(REG_BLDCNT & BLDCNT_TGT1_OBJ) \
+                            else if(bldcnt & BLDCNT_TGT1_OBJ) \
                             { \
                                 switch (blendMode) \
                                 { \
@@ -2571,17 +2608,17 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
             {
                 bool winShouldDraw = true;
                 #define writeSpritePixel(pixel, x) \
-                    winShouldDraw = windowsEnabled == false || ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)));\
+                    winShouldDraw = windowsEnabled == false || ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((winout & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)));\
                     if (pixel && winShouldDraw) { \
                         uint16_t color = palette[pixel]; \
                         \
-                        winShouldBlendPixel = windowsEnabled == false || ( (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_CLR) ); \
-                        if ((blendMode == 1 && REG_BLDCNT & BLDCNT_TGT1_OBJ && winShouldBlendPixel) || isSemiTransparent) \
+                        winShouldBlendPixel = windowsEnabled == false || ( (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && winout & WINOUT_WIN01_CLR) ); \
+                        if ((blendMode == 1 && bldcnt & BLDCNT_TGT1_OBJ && winShouldBlendPixel) || isSemiTransparent) \
                         { \
-                            if (scanline->bgMask[x] & (REG_BLDCNT >> 8)) \
-                                color = alphaBlendColor(color, pixels[x]); \
+                            if (scanline->bgMask[x] & (bldcnt >> 8)) \
+                                color = alphaBlendColorEv(color, pixels[x], blendEva, blendEvb); \
                         } \
-                        else if(REG_BLDCNT & BLDCNT_TGT1_OBJ && winShouldBlendPixel) \
+                        else if(bldcnt & BLDCNT_TGT1_OBJ && winShouldBlendPixel) \
                         { \
                             switch (blendMode) \
                             { \
@@ -2640,6 +2677,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
             }
             x += TILE_WIDTH; //Move on onto the next block
         }
+        }
     }
 }
 
@@ -2683,7 +2721,7 @@ static void inline_hack DrawTiledSprite(int SpriteIndex, struct scanlineData* sc
 {
     struct OamData *oam = &((struct OamData *)OAM)[SpriteIndex];
     unsigned int width, height;
-    int32_t screenX, y, rel, row;
+    int32_t screenX, y, rel, row, repeats;
 
     if (!SpriteDims(oam, &width, &height))
         return;
@@ -2699,16 +2737,19 @@ static void inline_hack DrawTiledSprite(int SpriteIndex, struct scanlineData* sc
     y += row * (int32_t)height;
 
     // Start at the repeat just off the left edge and walk right. The draw adds
-    // gRenderOffsetX itself, so step through screen space and hand back the
-    // position in OAM space.
+    // gRenderOffsetX itself, so work out the span in screen space and hand back
+    // the starting position in OAM space.
     screenX = ((int32_t)oam->x + gRenderOffsetX) % (int32_t)width;
     if (screenX > 0)
         screenX -= (int32_t)width;
     screenX -= (int32_t)width;
 
-    for (; screenX < gRenderWidth; screenX += (int32_t)width)
+    // One call covering every repeat, not one call each: the per-sprite setup
+    // is the expensive part and it is identical for all of them.
+    repeats = (gRenderWidth - screenX + (int32_t)width - 1) / (int32_t)width;
+    if (repeats > 0)
         DrawNonAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn,
-                            screenX - gRenderOffsetX, y);
+                            screenX - gRenderOffsetX, y, repeats);
 }
 
 static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsEnabled, uint8_t priority, uint16_t* pixels, bool IsInsideWinIn)
@@ -2742,7 +2783,7 @@ static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsE
         else if (oam->tileAcross)
             DrawTiledSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn);
         else
-            DrawNonAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn, (int32_t)oam->x, (int32_t)oam->y);
+            DrawNonAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn, (int32_t)oam->x, (int32_t)oam->y, 1);
     }
 }
 
