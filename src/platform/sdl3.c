@@ -1414,8 +1414,17 @@ static void ResolveSavePath(void)
             useLocal = TRUE;
         }
     }
-#else
-    // iOS: the save goes in the app's Documents directory rather than the
+#elif defined(SDL_PLATFORM_IOS)
+    // iOS only, and deliberately not "mobile". Android reaches this file too,
+    // and SDL_GetUserFolder is unimplemented there -- it returns NULL, so
+    // Android would fall through to the preferences directory and behave as it
+    // always has. That is the right outcome by accident, and SDL carries a TODO
+    // to implement it: the day that lands, Android saves would silently move to
+    // shared external storage and every existing save would be stranded behind
+    // a storage permission. Android's own answer is
+    // SDL_GetAndroidExternalStoragePath, which is a separate change.
+    //
+    // The save goes in the app's Documents directory rather than the
     // preferences directory, because that is the only one the Files app and
     // Finder can see (with UIFileSharingEnabled and
     // LSSupportsOpeningDocumentsInPlace in the plist). The file is the real
