@@ -1335,10 +1335,12 @@ void ProcessEvents(void)
 // Moves a file that an older build left in the preferences directory. Returns
 // true if the destination ends up holding a save, either because one was
 // already there or because this moved it.
-static bool8 MigrateSave(const char *from, const char *to)
+// expectedSize is the only size worth copying, or 0 for "anything non-empty".
+static bool8 MigrateSave(const char *from, const char *to, long expectedSize)
 {
     FILE *src, *dst;
     char buffer[4096];
+    long size;
     size_t n;
 
     dst = fopen(to, "rb");
@@ -1351,6 +1353,18 @@ static bool8 MigrateSave(const char *from, const char *to)
     src = fopen(from, "rb");
     if (src == NULL)
         return FALSE;
+
+    // An earlier build left a zero-byte save behind, and copying that would
+    // both hand the game an empty file and -- because the destination then
+    // exists -- block a real save from ever migrating afterwards.
+    fseek(src, 0, SEEK_END);
+    size = ftell(src);
+    fseek(src, 0, SEEK_SET);
+    if (size <= 0 || (expectedSize != 0 && size != expectedSize))
+    {
+        fclose(src);
+        return FALSE;
+    }
 
     dst = fopen(to, "wb");
     if (dst == NULL)
@@ -1427,8 +1441,8 @@ static void ResolveSavePath(void)
 
                 snprintf(oldSave, sizeof(oldSave), "%spokeemerald.sav", pref);
                 snprintf(oldBind, sizeof(oldBind), "%scontrols.cfg", pref);
-                MigrateSave(oldSave, sSavePath);
-                MigrateSave(oldBind, sBindPath);
+                MigrateSave(oldSave, sSavePath, (long)sizeof(FLASH_BASE));
+                MigrateSave(oldBind, sBindPath, 0);
                 SDL_free(pref);
             }
 
