@@ -1,5 +1,9 @@
 # Wide view: rendering neighbouring maps with their own tilesets
 
+Covers *how* another map's tiles get drawn. What there is to draw beyond the
+edge of the map data -- which is unresolved and parked -- is in
+[WIDE_VIEW_MAP_FILL.md](WIDE_VIEW_MAP_FILL.md).
+
 ## The bug
 
 Hoenn's outdoor maps share a primary tileset but each has its own secondary, and
