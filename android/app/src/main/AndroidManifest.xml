@@ -13,6 +13,15 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- allowBackup: the save lives in the app's external files directory
+         (Android/data/<pkg>/files, see ResolveSavePath). That is one of the
+         directories Auto Backup covers by default, which is what Google One
+         lists as this app's data, and at 128 KB it is well under the 25 MB cap.
+
+         It stays covered only while there are no custom backup rules. Declaring
+         android:fullBackupContent or android:dataExtractionRules makes the set
+         exclusive, so anything added later must include domain="external" or
+         the save silently stops being backed up. -->
     <application android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

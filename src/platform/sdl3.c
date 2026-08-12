@@ -1414,15 +1414,55 @@ static void ResolveSavePath(void)
             useLocal = TRUE;
         }
     }
+#elif defined(SDL_PLATFORM_ANDROID)
+    // Android: the save goes in the app's external files directory --
+    // Android/data/<pkg>/files, what getExternalFilesDir gives -- rather than
+    // the internal one SDL_GetPrefPath returns. Internal storage is private to
+    // the app and unreachable without root, so a save there could not be copied
+    // to a PC, to mGBA, or off a dying phone.
+    //
+    // This is still app-specific storage, so it needs no permission on any
+    // supported release, and it is one of the directories Auto Backup covers by
+    // default -- which is what Google One shows as the app's backed-up data.
+    // See the note beside allowBackup in AndroidManifest.xml: it stays covered
+    // only while no custom backup rules exist, since declaring any include
+    // makes the set exclusive.
+    {
+        const char *external = SDL_GetAndroidExternalStoragePath();
+
+        // Unavailable while the storage is unmounted or shared over USB.
+        if (external != NULL
+         && (SDL_GetAndroidExternalStorageState() & SDL_ANDROID_EXTERNAL_STORAGE_WRITE))
+        {
+            snprintf(sSavePath, sizeof(sSavePath), "%s/pokeemerald.sav", external);
+            snprintf(sBindPath, sizeof(sBindPath), "%s/controls.cfg", external);
+
+            if (pref != NULL)
+            {
+                // SDL_GetPrefPath ignores the org and app names on Android and
+                // hands back the internal files directory itself, so an older
+                // build's save sits directly in it.
+                char oldSave[FILENAME_MAX];
+                char oldBind[FILENAME_MAX];
+
+                snprintf(oldSave, sizeof(oldSave), "%spokeemerald.sav", pref);
+                snprintf(oldBind, sizeof(oldBind), "%scontrols.cfg", pref);
+                MigrateSave(oldSave, sSavePath, (long)sizeof(FLASH_BASE));
+                MigrateSave(oldBind, sBindPath, 0);
+                SDL_free(pref);
+            }
+
+            SDL_SetAtomicInt(&sRebindIndex, -1);
+            SDL_SetAtomicInt(&sConflictIndex, -1);
+            LoadBindings();
+            return;
+        }
+    }
 #elif defined(SDL_PLATFORM_IOS)
-    // iOS only, and deliberately not "mobile". Android reaches this file too,
-    // and SDL_GetUserFolder is unimplemented there -- it returns NULL, so
-    // Android would fall through to the preferences directory and behave as it
-    // always has. That is the right outcome by accident, and SDL carries a TODO
-    // to implement it: the day that lands, Android saves would silently move to
-    // shared external storage and every existing save would be stranded behind
-    // a storage permission. Android's own answer is
-    // SDL_GetAndroidExternalStoragePath, which is a separate change.
+    // iOS only, and deliberately not "mobile" -- Android is handled above and
+    // wants a different directory. SDL_GetUserFolder is also unimplemented on
+    // Android, so sharing this branch would have worked only until SDL
+    // implemented it and moved every Android save without warning.
     //
     // The save goes in the app's Documents directory rather than the
     // preferences directory, because that is the only one the Files app and
