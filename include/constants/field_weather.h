@@ -3,7 +3,10 @@
 
 #define MAX_RAIN_SPRITES             24
 #define NUM_CLOUD_SPRITES            3
-#define NUM_FOG_HORIZONTAL_SPRITES   20
+// One, because it tiles itself -- see FogHorizontalSpriteCallback. The other
+// counts here are still grids sized to the GBA's screen and still only cover a
+// patch of the expanded viewport.
+#define NUM_FOG_HORIZONTAL_SPRITES   1
 #define NUM_ASH_SPRITES              20
 #define NUM_FOG_DIAGONAL_SPRITES     20
 #define NUM_SANDSTORM_SPRITES        20

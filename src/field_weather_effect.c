@@ -1448,15 +1448,14 @@ bool8 FogHorizontal_Finish(void)
 
 #define tSpriteColumn data[0]
 
+// The single sprite tiles to fill the viewport (oam.tileAcross), so this only
+// has to carry the scroll phase -- the repeat is taken modulo the sprite's size.
+// The column bookkeeping and the DISPLAY_WIDTH wrap it replaced only ever
+// covered the vanilla screen.
 static void FogHorizontalSpriteCallback(struct Sprite *sprite)
 {
     sprite->y2 = (u8)gSpriteCoordOffsetY;
-    sprite->x = gWeatherPtr->fogHScrollPosX + 32 + sprite->tSpriteColumn * 64;
-    if (sprite->x >= DISPLAY_WIDTH + 32)
-    {
-        sprite->x = (DISPLAY_WIDTH * 2) + gWeatherPtr->fogHScrollPosX - (4 - sprite->tSpriteColumn) * 64;
-        sprite->x &= 0x1FF;
-    }
+    sprite->x = gWeatherPtr->fogHScrollPosX + 32;
 }
 
 static void CreateFogHorizontalSprites(void)
@@ -1479,9 +1478,12 @@ static void CreateFogHorizontalSprites(void)
             if (spriteId != MAX_SPRITES)
             {
                 sprite = &gSprites[spriteId];
-                sprite->tSpriteColumn = i % 5;
-                sprite->x = (i % 5) * 64 + 32;
-                sprite->y = (i / 5) * 64 + 32;
+                sprite->tSpriteColumn = 0;
+                sprite->x = 32;
+                sprite->y = 32;
+                // One sprite repeated across the whole viewport, rather than a
+                // grid sized to a screen this port no longer has.
+                sprite->oam.tileAcross = TRUE;
                 gWeatherPtr->sprites.s2.fogHSprites[i] = sprite;
             }
             else

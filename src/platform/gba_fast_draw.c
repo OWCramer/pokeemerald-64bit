@@ -2301,7 +2301,7 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
     }
 }
 
-static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn)
+static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn, int32_t oamX, int32_t oamY)
 {
     struct OamData *oam = &((struct OamData *)OAM)[SpriteIndex];
     void *objtiles = VRAM_ + 0x10000;
@@ -2340,8 +2340,10 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
     }
 
     int half_height = height / 2;
-    int32_t x = (int32_t)oam->x;
-    int32_t y = (int32_t)oam->y;
+    // Taken as arguments rather than read from the OAM entry, so a tiling
+    // sprite can be drawn at each repeat without rewriting OAM.
+    int32_t x = oamX;
+    int32_t y = oamY;
 
 
 
@@ -2642,6 +2644,73 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
 }
 
 // Parts of this code heavily borrowed from NanoboyAdvance.
+static bool SpriteDims(const struct OamData *oam, unsigned int *width, unsigned int *height)
+{
+    if (oam->shape == 0)
+    {
+        *width = *height = (1 << oam->size) * 8;
+    }
+    else if (oam->shape == 1) // wide
+    {
+        *width = spriteSizes[oam->size][1];
+        *height = spriteSizes[oam->size][0];
+    }
+    else if (oam->shape == 2) // tall
+    {
+        *width = spriteSizes[oam->size][0];
+        *height = spriteSizes[oam->size][1];
+    }
+    else
+    {
+        return false; // prohibited, do not draw
+    }
+    return true;
+}
+
+// Port extension: a sprite marked tileAcross repeats to fill the viewport
+// instead of drawing once.
+//
+// The weather overlays are grids of 64x64 sprites sized to the GBA's 240x160 --
+// fog is five columns by four rows, and wraps against DISPLAY_WIDTH -- so on the
+// expanded viewport they cover a 320x256 patch and leave the rest clear. Tiling
+// them with more sprites does not scale: a 2000px-wide render wants about 350,
+// against a pool of 64 and an OAM of 128. Repeating one sprite along the
+// scanline draws the same pixels and costs no OAM at all.
+//
+// Only the row of repeats covering this scanline is drawn, so the cost is the
+// viewport's width in pixels, the same as the grid would have been.
+static void inline_hack DrawTiledSprite(int SpriteIndex, struct scanlineData* scanline, int vcount, bool windowsEnabled, uint16_t* pixels, bool IsInsideWinIn)
+{
+    struct OamData *oam = &((struct OamData *)OAM)[SpriteIndex];
+    unsigned int width, height;
+    int32_t screenX, y, rel, row;
+
+    if (!SpriteDims(oam, &width, &height))
+        return;
+
+    // Which repeat covers this scanline. oam->y is the top edge, and vcount is
+    // already in the same space -- the vertical render shift is baked into it.
+    y = (int32_t)oam->y % (int32_t)height;
+    if (y > 0)
+        y -= (int32_t)height;
+    rel = vcount - y;
+    row = rel >= 0 ? rel / (int32_t)height
+                   : -((-rel + (int32_t)height - 1) / (int32_t)height);
+    y += row * (int32_t)height;
+
+    // Start at the repeat just off the left edge and walk right. The draw adds
+    // gRenderOffsetX itself, so step through screen space and hand back the
+    // position in OAM space.
+    screenX = ((int32_t)oam->x + gRenderOffsetX) % (int32_t)width;
+    if (screenX > 0)
+        screenX -= (int32_t)width;
+    screenX -= (int32_t)width;
+
+    for (; screenX < gRenderWidth; screenX += (int32_t)width)
+        DrawNonAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn,
+                            screenX - gRenderOffsetX, y);
+}
+
 static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsEnabled, uint8_t priority, uint16_t* pixels, bool IsInsideWinIn)
 {
     int SpriteIndex;
@@ -2670,8 +2739,10 @@ static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsE
         
         if (oam->affineMode & 1 || oam->bpp & 1 || oam->mosaic == 1)
             DrawAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn);
+        else if (oam->tileAcross)
+            DrawTiledSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn);
         else
-            DrawNonAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn);
+            DrawNonAffineSprite(SpriteIndex, scanline, vcount, windowsEnabled, pixels, IsInsideWinIn, (int32_t)oam->x, (int32_t)oam->y);
     }
 }
 
