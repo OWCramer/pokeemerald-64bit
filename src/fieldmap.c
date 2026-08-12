@@ -92,6 +92,7 @@ extern const struct MapLayout *const gMapLayouts[];
 
 static void CopyTilesetToVramDirect(struct Tileset const *tileset, u16 numTiles, u32 tileOffset);
 static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u16 size);
+static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHeader, s32 x2, s32 y2, s32 width, s32 height);
 static void ResetTilesetBanks(void);
 static void InitMapLayoutData(const struct MapHeader *mapHeader);
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height);
@@ -354,9 +355,97 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
     }
 }
 
+// Where a connected map's (0, 0) lands in the layout, given where the map it
+// hangs off starts.
+static bool32 GetConnectionOrigin(const struct MapHeader *mapHeader, const struct MapConnection *connection,
+                                  const struct MapHeader *cMap, s32 originX, s32 originY, s32 *outX, s32 *outY)
+{
+    switch (connection->direction)
+    {
+    case CONNECTION_NORTH:
+        *outX = originX + connection->offset;
+        *outY = originY - cMap->mapLayout->height;
+        return TRUE;
+    case CONNECTION_SOUTH:
+        *outX = originX + connection->offset;
+        *outY = originY + mapHeader->mapLayout->height;
+        return TRUE;
+    case CONNECTION_WEST:
+        *outX = originX - cMap->mapLayout->width;
+        *outY = originY + connection->offset;
+        return TRUE;
+    case CONNECTION_EAST:
+        *outX = originX + mapHeader->mapLayout->width;
+        *outY = originY + connection->offset;
+        return TRUE;
+    }
+    return FALSE; // dive and emerge are not places on this layout
+}
+
+// Fills a whole map at an arbitrary position, clipped to the layout.
+static void FillMapRegion(const struct MapHeader *mapHeader, s32 x, s32 y)
+{
+    s32 srcX = 0, srcY = 0;
+    s32 width = mapHeader->mapLayout->width;
+    s32 height = mapHeader->mapLayout->height;
+
+    if (x < 0)
+    {
+        srcX = -x;
+        width += x;
+        x = 0;
+    }
+    if (y < 0)
+    {
+        srcY = -y;
+        height += y;
+        y = 0;
+    }
+    if (x + width > gBackupMapLayout.width)
+        width = gBackupMapLayout.width - x;
+    if (y + height > gBackupMapLayout.height)
+        height = gBackupMapLayout.height - y;
+
+    if (width > 0 && height > 0)
+        FillConnection(x, y, mapHeader, srcX, srcY, width, height);
+}
+
+// The expanded viewport sees further than the maps this one is joined to:
+// standing on Route 110 you can see clear past Mauville into Route 111. Those
+// are not connections of the current map, so nothing filled them and they fell
+// back to border metatiles -- which is why Route 110's ocean was drawn through
+// the middle of Mauville, and Route 111's dirt through Route 110. It also meant
+// the same piece of world changed appearance depending on which map the player
+// happened to be standing on.
+//
+// One more level of connections covers what the margin can show. Deeper would
+// need a visited set and cycle handling to buy very little more on screen.
+static void FillConnectionsOfConnection(const struct MapHeader *mapHeader, const struct MapHeader *from,
+                                        s32 originX, s32 originY)
+{
+    s32 count, i, x, y;
+    const struct MapConnection *connection;
+    const struct MapHeader *cMap;
+
+    if (mapHeader->connections == NULL || mapHeader->connections->connections == NULL)
+        return;
+
+    count = mapHeader->connections->count;
+    connection = mapHeader->connections->connections;
+    for (i = 0; i < count; i++, connection++)
+    {
+        cMap = GetMapHeaderFromConnection(connection);
+        // Skip the way we came: already filled, and at the same place.
+        if (cMap == NULL || cMap == from)
+            continue;
+        if (GetConnectionOrigin(mapHeader, connection, cMap, originX, originY, &x, &y))
+            FillMapRegion(cMap, x, y);
+    }
+}
+
 static void InitBackupMapLayoutConnections(const struct MapHeader *mapHeader)
 {
-    s32 count, i, offset;
+    s32 count, i, offset, x, y;
     const struct MapConnection *connection;
     const struct MapHeader *cMap;
 
@@ -389,6 +478,17 @@ static void InitBackupMapLayoutConnections(const struct MapHeader *mapHeader)
             sMapConnectionFlags.east = TRUE;
             break;
         }
+    }
+
+    // Second pass, so a map two hops away can never land on top of one the
+    // player can actually walk to.
+    connection = mapHeader->connections->connections;
+    for (i = 0; i < count; i++, connection++)
+    {
+        cMap = GetMapHeaderFromConnection(connection);
+        if (cMap != NULL
+         && GetConnectionOrigin(mapHeader, connection, cMap, MAP_BORDER_TOTAL, MAP_BORDER_TOTAL, &x, &y))
+            FillConnectionsOfConnection(cMap, mapHeader, x, y);
     }
 }
 
