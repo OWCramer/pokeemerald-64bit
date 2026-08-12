@@ -48,6 +48,8 @@ renderer needs no special case for which half a tile came from.
 | 4 | `9256abc92` | `DrawMetatileAt` takes the metatile out of the cell's own bank and tags the tilemap; the layer type follows the cell's tileset too. |
 | 5 | `bfe0d0a93` | Bank palettes fade, blend and weather with everything else. |
 | 6 | `385e8387b` | Tileset animations reach every bank that shares the animated tileset. |
+| 7 | `836408d2c` | Translated tags across a seam, back when banks were renumbered per map. Superseded. |
+| 8 | `2c9e8ceef` | Banks made permanent, removing the renumbering and the reload -- and with them stage 7. |
 
 ### Why a separate bank plane rather than a wider tilemap entry
 
@@ -92,11 +94,12 @@ missing any one of them is individually visible:
   is drawn to, so leaving it on the current map put a connected town's rooftops
   behind the layer that covers sprites.
 
-The metatile **behaviour** lookup is deliberately *not* bank-aware. Behaviours
-drive movement, and the camera transition makes a connected map current before
-the player can stand on any of its cells, so every cell consulted for movement
-is bank 0 -- which also means none of this can change what the player can walk
-on.
+The metatile **behaviour** lookup is deliberately *not* bank-aware: it reads the
+current map's tilesets, the way it always did. Behaviours drive movement, and the
+camera transition makes a connected map current before the player can stand on
+any of its cells, so every cell consulted for movement belongs to the current map
+and already resolves to the same tileset its bank holds. Leaving it alone also
+means none of this can change what the player can walk on.
 
 ## Known limits
 
@@ -127,4 +130,4 @@ on.
   in a parallel array rather than in the cell.
 * **`LoadBgTiles` cannot reach a bank.** It computes its destination as a `u16`
   byte offset, which `TILESET_BANK_VRAM_START` (0x20000) overflows to zero.
-  `CopyTilesetToVramBank` writes VRAM directly instead.
+  `CopyTilesetToVramDirect` writes VRAM directly instead.
