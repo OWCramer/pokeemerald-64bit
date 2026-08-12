@@ -632,7 +632,7 @@ static void Task_SetBuriedTrainerMovement(u8 taskId)
     struct Task *task = &gTasks[taskId];
     struct ObjectEvent *objEvent;
 
-    LoadWordFromTwoHalfwords((u16*) &task->tObjEvent, (u32 *)&objEvent);
+    objEvent = LoadPtrFromTwoHalfwords((u16 *)&task->tObjEvent);
     if (!task->data[7])
     {
         ObjectEventClearHeldMovement(objEvent);

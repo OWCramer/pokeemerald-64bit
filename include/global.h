@@ -235,6 +235,23 @@ static inline void *PtrRebase32(u32 v)
 #define PTR_REBASE32(v)  ((void *)(uintptr_t)(v))
 #endif
 
+// Loads a pointer that was squeezed into two 16-bit task or sprite slots.
+//
+// LoadWordFromTwoHalfwords writes 32 bits, which is the whole pointer on the
+// GBA and half of one here -- the rest of the destination keeps whatever was
+// already on the stack. That is how Fly jumped to 0x4320000000219ca4: the low
+// half a truncated address, the high half leftover garbage. The 32 bits that
+// were stored are the low half of a real pointer, so they go back through
+// PTR_REBASE32 like every other split pointer.
+//
+// Spelled out rather than calling LoadWordFromTwoHalfwords so this can live
+// here, above everything that needs it. That function sign-extends the high
+// halfword, which only sets bits its u32 result discards.
+static inline void *LoadPtrFromTwoHalfwords(const u16 *h)
+{
+    return PTR_REBASE32((u32)h[0] | ((u32)h[1] << 16));
+}
+
 #ifdef NATIVE_BUILD
 // Bytecode pointers are self-relative (offset from their own slot). That cannot
 // survive being copied into ctx->data[] and reloaded after the slot is gone

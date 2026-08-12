@@ -2723,8 +2723,7 @@ static void FieldMoveShowMonOutdoorsEffect_RestoreBg(struct Task *task)
 
 static void FieldMoveShowMonOutdoorsEffect_End(struct Task *task)
 {
-    IntrCallback callback;
-    LoadWordFromTwoHalfwords((u16 *)&task->data[13], (u32 *)&callback);
+    IntrCallback callback = (IntrCallback)LoadPtrFromTwoHalfwords((u16 *)&task->data[13]);
     SetVBlankCallback(callback);
     InitTextBoxGfxAndPrinters();
     FreeResourcesAndDestroySprite(&gSprites[task->tMonSpriteId], task->tMonSpriteId);
@@ -2734,10 +2733,12 @@ static void FieldMoveShowMonOutdoorsEffect_End(struct Task *task)
 
 static void VBlankCB_FieldMoveShowMonOutdoors(void)
 {
-    IntrCallback callback;
     struct Task *task = &gTasks[FindTaskIdByFunc(Task_FieldMoveShowMonOutdoors)];
-    LoadWordFromTwoHalfwords((u16 *)&task->data[13], (u32 *)&callback);
-    callback();
+    IntrCallback callback = (IntrCallback)LoadPtrFromTwoHalfwords((u16 *)&task->data[13]);
+
+    // A stored 0 rebases to NULL, and this runs inside the vblank handler.
+    if (callback != NULL)
+        callback();
     SetGpuReg(REG_OFFSET_WIN0H, task->tWinHoriz);
     SetGpuReg(REG_OFFSET_WIN0V, task->tWinVert);
     SetGpuReg(REG_OFFSET_WININ, task->tWinIn);
@@ -2853,7 +2854,7 @@ static void FieldMoveShowMonIndoorsEffect_End(struct Task *task)
     u16 bg0cnt;
     bg0cnt = (REG_BG0CNT >> 8) << 11;
     CpuFill32(0, (void *)VRAM + bg0cnt, 0x800);
-    LoadWordFromTwoHalfwords((u16 *)&task->data[13], (u32 *)&intrCallback);
+    intrCallback = (IntrCallback)LoadPtrFromTwoHalfwords((u16 *)&task->data[13]);
     SetVBlankCallback(intrCallback);
     InitTextBoxGfxAndPrinters();
     FreeResourcesAndDestroySprite(&gSprites[task->tMonSpriteId], task->tMonSpriteId);
@@ -2866,8 +2867,10 @@ static void VBlankCB_FieldMoveShowMonIndoors(void)
     IntrCallback intrCallback;
     struct Task *task;
     task = &gTasks[FindTaskIdByFunc(Task_FieldMoveShowMonIndoors)];
-    LoadWordFromTwoHalfwords((u16 *)&task->data[13], (u32 *)&intrCallback);
-    intrCallback();
+    intrCallback = (IntrCallback)LoadPtrFromTwoHalfwords((u16 *)&task->data[13]);
+
+    if (intrCallback != NULL)
+        intrCallback();
     SetGpuReg(REG_OFFSET_BG0HOFS, task->tBgHoriz);
     SetGpuReg(REG_OFFSET_BG0VOFS, task->tBgVert);
 }
