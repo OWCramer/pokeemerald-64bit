@@ -44,6 +44,11 @@ Bank 0 is not a bank. It means "no bank", and decodes against the stock VRAM and
 palette layout, which is what every menu and text box does, and the fallback for
 a pair that could not be assigned one.
 
+**The map the player is standing on also draws from the stock layout**, even
+though it has a bank: its bank is published with a zero tile delta and zero
+palette base. Only the *other* maps on screen resolve through a slot. This is
+load-bearing -- see below.
+
 A metatile id keeps its vanilla meaning throughout: below
 `NUM_METATILES_IN_PRIMARY` it names the pair's primary, at or above it the
 secondary. The renderer picks the half with the same split, through a per-bank
@@ -61,6 +66,7 @@ table lookup rather than a branch.
 | 7 | `836408d2c` | Translated tags across a seam, back when banks were renumbered per map. Superseded. |
 | 8 | `2c9e8ceef` | Banks made permanent, removing the renumbering and the reload -- and with them stage 7. |
 | 9 | `33e1dc374` | Tiles split out into a slot per tileset, all loaded at boot. |
+| 10 | `086b60fb2` | Current map pointed back at the stock layout, so runtime effects keep working. |
 
 ### Why a separate bank plane rather than a wider tilemap entry
 
@@ -95,6 +101,31 @@ Two things had to be true for permanence to hold:
   one contiguous range for fades and weather to reach a bank at all. Rewriting
   identical data is idempotent, so unlike a reload of the tiles it cannot open a
   window.
+
+### Why the current map stays on the stock layout
+
+Briefly it did not, and two bugs came straight out of that:
+
+* Doors animated into a black hole. `field_door.c` copies its frames into the
+  stock layout, so the field was reading tiles nothing had written.
+* Outdoor water and flowers turned up baked into the floor of every building.
+  A tileset animation callback outlives the map that installed it, so for one
+  frame `gTileset_General`'s animation was redirected to whatever the new map's
+  primary was -- `gTileset_Building`, shared by all 179 interiors. Slots are
+  permanent, so that one frame poisoned every interior for the rest of the
+  session.
+
+Everything that changes the field at runtime writes to the stock layout: door
+animations, tileset animations, the cave-entry flash recolouring BG palette 0,
+Mirage Tower crumbling, field move streaks. Redirecting each one means finding
+all of them, and a miss is either invisible or permanent. Pointing the current
+map back at the stock layout makes all of it work unchanged, and leaves banks
+doing only the job they exist for.
+
+The animation redirect is still needed -- a neighbour sharing the animated
+tileset reads its slot -- so `tileset_anims.c` records which tileset each
+callback belongs to when it is installed, rather than inferring it from
+`gMapHeader`, which is what went wrong.
 
 ### Things that had to follow the bank
 
