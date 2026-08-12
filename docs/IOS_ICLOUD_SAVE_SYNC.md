@@ -175,9 +175,14 @@ Two devices is the only real test, but most of it can be forced on one:
    telling the player is the simplest thing that works, and the counter makes it
    safe in the ordinary case. Showing a choice needs UI the game does not have.
    Silent, with conflicts preserved as files, is the recommendation.
-2. **Visible in iCloud Drive**, or only synced? Visible is friendlier and costs
-   one plist key, but it means a player can edit or delete the file underneath a
-   running game.
+2. **Visible in iCloud Drive**, or only synced? Answered, by the Android design
+   next door: keep it invisible. The mirror works here precisely because nobody
+   manages this container's files by hand -- "newest counter wins" settles a
+   race between devices. Surface it in iCloud Drive and it inherits the bug that
+   design was rewritten to remove: a file the player deletes comes back on the
+   next save, and an older save they deliberately restored is refused for having
+   a lower counter. A file the player can see is a file they will manage, and
+   that wants the single-file model instead. See `ANDROID_SAVE_LOCATION.md`.
 3. **Does the conflict copy belong in `Documents/` or the container?**
    `Documents/` makes it visible in Files on the device that lost, which is
    where someone would look for it.
