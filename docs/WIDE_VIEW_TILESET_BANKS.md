@@ -22,23 +22,33 @@ map fixing it with no reload.
 
 ## The fix
 
-A **tileset bank** is a full 1024-tile, 16-palette copy of the tileset space the
-GBA can address at once. Banks are stacked above the stock VRAM and palette
-layout (`include/gba/defines.h`) rather than carved out of it, so every address
-the rest of the game already uses is unchanged -- OBJ palettes in particular
-stay exactly where sprite rendering expects them. Bank 0 is not a bank: it means
-"no bank", and decodes against the stock layout, which is what every menu and
-text box does.
+Two things, kept apart:
 
-**Banks are permanent.** There are only 76 distinct tileset pairs in the whole
-game, so every pair the session touches keeps its bank until the session ends
-and its tiles are loaded exactly once -- 2.4 MB if the player visits everything.
-This is the single most important property: a bank id under a tilemap can never
-come to mean a different tileset than it did when it was written.
+* A **tileset slot** holds one tileset's 512 tiles. There are 74 tilesets in the
+  game, and **every one is loaded at boot** -- 1.2 MB, decompressed once. No map
+  load decompresses anything, and no slot is ever written again.
+* A **bank** is a tileset *pair*: the middle man. A map cell names its bank, and
+  the bank resolves to the two slots the cell's ids and palettes are read
+  against. Keying on the pair rather than the secondary means a connection whose
+  primary differs decodes its terrain correctly too.
 
-A bank is keyed on the whole tileset *pair*, not just the secondary, so a
-connection whose primary differs decodes its terrain correctly too, and the
-renderer needs no special case for which half a tile came from.
+Storing tiles per tileset rather than per bank matters because almost every map
+shares `gTileset_General`: per bank it would be held seventy-odd times over.
+
+Banks are permanent -- a pair keeps its bank for the session. **Nothing about a
+bank changes while the game runs**, which is the property the whole design rests
+on: a bank id under a tilemap can never come to mean a different tileset than it
+did when it was written.
+
+Bank 0 is not a bank. It means "no bank", and decodes against the stock VRAM and
+palette layout, which is what every menu and text box does, and the fallback for
+a pair that could not be assigned one.
+
+A metatile id keeps its vanilla meaning throughout: below
+`NUM_METATILES_IN_PRIMARY` it names the pair's primary, at or above it the
+secondary. The renderer picks the half with the same split, through a per-bank
+delta indexed by the top bit of the 10-bit tile id, so its inner loop gains a
+table lookup rather than a branch.
 
 | stage | commit | what |
 |---|---|---|
@@ -50,6 +60,7 @@ renderer needs no special case for which half a tile came from.
 | 6 | `385e8387b` | Tileset animations reach every bank that shares the animated tileset. |
 | 7 | `836408d2c` | Translated tags across a seam, back when banks were renumbered per map. Superseded. |
 | 8 | `2c9e8ceef` | Banks made permanent, removing the renumbering and the reload -- and with them stage 7. |
+| 9 | `33e1dc374` | Tiles split out into a slot per tileset, all loaded at boot. |
 
 ### Why a separate bank plane rather than a wider tilemap entry
 
@@ -73,6 +84,17 @@ Making banks permanent deletes all three. Nothing renumbers, so no translation
 is needed; nothing reloads, so no bank's contents change under a tilemap that
 refers to it. The stock VRAM region is then unused by the field, and stays only
 as the fallback for a bank that could not be assigned.
+
+Two things had to be true for permanence to hold:
+
+* **`VRAM_SIZE` means the stock region**, with `VRAM_TOTAL_SIZE` covering the
+  slots above it. Three dozen screens clear VRAM with `VRAM_SIZE` on their way
+  in, and would otherwise wipe tiles nothing ever reloads.
+* **Palettes are rewritten on every map load**, because they get no such
+  protection -- as many screens clear PLTT, and the palette buffers have to stay
+  one contiguous range for fades and weather to reach a bank at all. Rewriting
+  identical data is idempotent, so unlike a reload of the tiles it cannot open a
+  window.
 
 ### Things that had to follow the bank
 
@@ -107,13 +129,13 @@ means none of this can change what the player can walk on.
   game). A pair that will not fit falls back to bank 0 -- the stock layout, i.e.
   the old wrong-but-harmless behaviour rather than an out-of-range bank.
 * A connected map whose *own secondary* animates -- a town fountain, a flag --
-  shows its first frame. Running those needs a second set of animation callbacks
-  and counters per bank. All of the outdoor animation is unaffected, because
-  water, waterfalls, shorelines and flowers live in `gTileset_General`, the
-  primary every Hoenn overworld map shares.
-* Both halves of a bank's pair are decompressed when the bank is first assigned,
-  even when the primary matches a bank already loaded. It happens once per pair
-  per session, so it is not worth sharing.
+  shows its first frame. Only the current map's animation callbacks run, so this
+  needs a set of callbacks and counters per tileset, not just somewhere to put
+  the result. All of the outdoor animation is unaffected, because water,
+  waterfalls, shorelines and flowers live in `gTileset_General`, the primary
+  every Hoenn overworld map shares -- and one tileset is one slot, so every map
+  using it animates in step for free.
+* `MAX_TILESET_SLOTS` distinct tilesets (80, against 74 in the game).
 
 ## Dead ends (do not retry)
 
@@ -128,6 +150,14 @@ means none of this can change what the player can walk on.
 * **There are no spare bits in a map cell.** 10 metatile id + 2 collision + 4
   elevation = 16/16 (`include/global.fieldmap.h`), which is why the bank lives
   in a parallel array rather than in the cell.
-* **`LoadBgTiles` cannot reach a bank.** It computes its destination as a `u16`
-  byte offset, which `TILESET_BANK_VRAM_START` (0x20000) overflows to zero.
-  `CopyTilesetToVramDirect` writes VRAM directly instead.
+* **`LoadBgTiles` cannot reach a slot.** It computes its destination as a `u16`
+  byte offset, which 0x20000 overflows to zero. `CopyTilesetToVramDirect` writes
+  VRAM directly instead.
+* **`LAYOUT_UNUSED_OUTDOOR_AREA` has a literal `0` for its secondary tileset.**
+  The 64-bit builds widen `.4byte` *symbols* to `.quad`; a bare `0` is
+  indistinguishable from an integer field, so it stayed four bytes and left that
+  layout short, its last field reading into whatever followed. Walking all 441
+  layouts at boot is the first thing that ever read it. `mapjson` emits `NULL`
+  there now -- the symbol it already used for a map with no connections, and the
+  same four zero bytes on the GBA. Any new pointer field that can be null needs
+  the same treatment.
