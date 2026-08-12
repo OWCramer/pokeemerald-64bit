@@ -15,6 +15,8 @@
 #include "secret_base.h"
 #include "trainer_hill.h"
 #include "tv.h"
+#include "platform/framedraw.h"
+#include "constants/layouts.h"
 #include "constants/rgb.h"
 #include "constants/metatile_behaviors.h"
 
@@ -41,27 +43,37 @@ EWRAM_DATA static u16 ALIGNED(4) sBackupMapData[MAX_MAP_DATA_SIZE] = {0};
 // Route 103 (Mauville vs Petalburg) while collision stayed right.
 EWRAM_DATA static u8 sBackupMapBank[MAX_MAP_DATA_SIZE] = {0};
 
-// A bank is keyed on the whole tileset pair, not just the secondary: a
-// connection whose primary differs would decode its terrain wrongly too.
+// Every tileset in the game gets a slot of its own, holding the 512 tiles a
+// primary or a secondary occupies. There are 74 of them against 76 pairs, so
+// storing tiles per tileset rather than per pair means gTileset_General -- the
+// primary all but a handful of maps share -- is held once instead of seventy
+// times, and the whole game's tiles come to 1.2 MB.
+static const struct Tileset *sTilesetSlots[MAX_TILESET_SLOTS];
+static u8 sTilesetSlotCount;
+
+// A bank is a tileset *pair*, because that is what a metatile id is meaningful
+// against: below NUM_METATILES_IN_PRIMARY it names the primary, above it the
+// secondary. The bank is the middle man -- a cell says which pair it belongs
+// to, and the pair says which two slots to resolve its ids and palettes
+// against.
+//
+// Both banks and slots are permanent. An earlier version rebuilt them on every
+// map load -- the map being entered took bank 0, the one being left became a
+// connection, tiles were reloaded and every tag already in a tilemap was
+// translated to match -- and a frame of a neighbouring map drawn against the
+// wrong tileset still got through that choreography. Nothing is renumbered or
+// reloaded now, so a bank id under a tilemap cannot come to mean anything
+// different from one frame to the next.
+//
+// Bank 0 means "no bank": the stock VRAM and palette layout, which is what
+// every menu and text box decodes against, and the fallback for a pair that
+// could not be assigned one.
 struct TilesetBank
 {
     const struct Tileset *primary;
     const struct Tileset *secondary;
-    bool8 loaded;
 };
 
-// Permanent, and deliberately so. An earlier version renumbered these on every
-// map load -- the map being entered took bank 0 and the one being left became a
-// connection -- which meant every tag already in a tilemap had to be translated
-// in step with the rebuild, and every bank's tiles had to be reloaded. Any gap
-// in that choreography showed up as a frame of a neighbouring map drawn against
-// the wrong tileset. There are only 76 distinct pairs in the game, so instead a
-// pair keeps its bank for the session and its tiles are loaded once: a tag can
-// no longer mean something different from one frame to the next.
-//
-// Slot 0 is reserved. Bank 0 means "no bank" -- the stock VRAM and palette
-// layout -- so an unbanked BG and a bank that could not be assigned both decode
-// exactly the way they did before any of this existed.
 static struct TilesetBank sTilesetBanks[MAX_TILESET_BANKS];
 static u8 sTilesetBankCount = 1;
 static u8 sCurrentTilesetBank;
@@ -74,6 +86,10 @@ COMMON_DATA struct BackupMapLayout gBackupMapLayout = {0};
 
 static const struct ConnectionFlags sDummyConnectionFlags = {0};
 
+extern const struct MapLayout *const gMapLayouts[];
+
+static void CopyTilesetToVramDirect(struct Tileset const *tileset, u16 numTiles, u32 tileOffset);
+static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u16 size);
 static void ResetTilesetBanks(void);
 static void InitMapLayoutData(const struct MapHeader *mapHeader);
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height);
@@ -134,12 +150,39 @@ void InitTrainerHillMap(void)
     GenerateTrainerHillFloorLayout(sBackupMapData);
 }
 
+// Returns the slot holding a tileset's tiles, claiming and filling one the
+// first time the tileset is seen. Returns -1 if there is no room, which leaves
+// the caller to fall back to bank 0.
+static s32 RegisterTilesetSlot(const struct Tileset *tileset)
+{
+    u8 i;
+
+    if (tileset == NULL)
+        return -1;
+
+    for (i = 0; i < sTilesetSlotCount; i++)
+    {
+        if (sTilesetSlots[i] == tileset)
+            return i;
+    }
+
+    if (sTilesetSlotCount >= MAX_TILESET_SLOTS)
+        return -1;
+
+    i = sTilesetSlotCount++;
+    sTilesetSlots[i] = tileset;
+    CopyTilesetToVramDirect(tileset, TILESET_SLOT_NUM_TILES, TILESET_SLOT_TILE_BASE(i));
+    return i;
+}
+
 // Returns the bank for a tileset pair, assigning one if the pair has not been
-// seen before. A pair that will not fit -- more distinct pairs in one session
-// than there are banks -- falls back to bank 0, which is the old
-// wrong-but-harmless behaviour rather than an out-of-range bank.
+// seen before. A pair that will not fit -- more distinct pairs than there are
+// banks, or a tileset that could not claim a slot -- falls back to bank 0,
+// which is the old wrong-but-harmless behaviour rather than an out-of-range
+// bank.
 static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tileset *secondary)
 {
+    s32 primarySlot, secondarySlot;
     u8 i;
 
     for (i = 1; i < sTilesetBankCount; i++)
@@ -148,15 +191,41 @@ static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tilese
             return i;
     }
 
-    if (sTilesetBankCount < MAX_TILESET_BANKS)
-    {
-        sTilesetBanks[sTilesetBankCount].primary = primary;
-        sTilesetBanks[sTilesetBankCount].secondary = secondary;
-        sTilesetBanks[sTilesetBankCount].loaded = FALSE;
-        return sTilesetBankCount++;
-    }
+    if (sTilesetBankCount >= MAX_TILESET_BANKS)
+        return 0;
 
-    return 0;
+    primarySlot = RegisterTilesetSlot(primary);
+    secondarySlot = RegisterTilesetSlot(secondary);
+    if (primarySlot < 0 || secondarySlot < 0)
+        return 0;
+
+    i = sTilesetBankCount++;
+    sTilesetBanks[i].primary = primary;
+    sTilesetBanks[i].secondary = secondary;
+
+    // Publish what the renderer needs: what to add to a tile id to reach the
+    // slot it really lives in. The secondary's ids start at
+    // NUM_TILES_IN_PRIMARY, so its delta carries that back off.
+    gTilesetBankTileDelta[i][0] = TILESET_SLOT_TILE_BASE(primarySlot);
+    gTilesetBankTileDelta[i][1] = TILESET_SLOT_TILE_BASE(secondarySlot) - NUM_TILES_IN_PRIMARY;
+    return i;
+}
+
+// Assigns a bank to every tileset pair the game has and loads all their tiles,
+// once, at startup. 76 pairs over 74 tilesets, 1.2 MB. Doing it here rather
+// than as maps are entered means no map load ever decompresses a tileset, and
+// nothing about a bank changes while the game is running.
+void InitTilesetBanks(void)
+{
+    u32 i;
+
+    for (i = 0; i < LAYOUTS_COUNT; i++)
+    {
+        const struct MapLayout *layout = gMapLayouts[i];
+
+        if (layout != NULL)
+            RegisterTilesetBank(layout->primaryTileset, layout->secondaryTileset);
+    }
 }
 
 // Tags every cell with the current map's bank. Connections overwrite the cells
@@ -174,6 +243,21 @@ static void ResetTilesetBanks(void)
 u8 GetCurrentTilesetBank(void)
 {
     return sCurrentTilesetBank;
+}
+
+// First tile of the slot holding this tileset, or 0 if it has no slot. Every
+// bank whose pair includes this tileset resolves to the same slot, so a caller
+// that writes here reaches every map using it at once.
+u32 GetTilesetSlotTileBase(const struct Tileset *tileset)
+{
+    u8 i;
+
+    for (i = 0; i < sTilesetSlotCount; i++)
+    {
+        if (sTilesetSlots[i] == tileset)
+            return TILESET_SLOT_TILE_BASE(i);
+    }
+    return 0;
 }
 
 const struct Tileset *GetTilesetBankPrimary(u8 bank)
@@ -1091,36 +1175,25 @@ static void CopyTilesetToVramDirect(struct Tileset const *tileset, u16 numTiles,
     }
 }
 
-// Loads any bank that has been assigned but not yet filled. A bank is loaded
-// once and then left alone for the rest of the session, so walking back and
-// forth across a map seam costs nothing after the first crossing and, more to
-// the point, no tilemap can be left pointing at a bank whose contents have
-// changed underneath it.
-void LoadTilesetBanks(void)
+// Tiles are loaded once at boot and live above VRAM_SIZE, out of reach of the
+// three dozen screens that clear VRAM on their way in. Palettes get no such
+// protection -- as many screens clear PLTT, and the palette buffers have to
+// stay one contiguous range so fades and weather reach a bank at all -- so
+// they are simply rewritten on every map load. It is a few hundred CpuCopy16s
+// of identical data, and being idempotent it cannot open the kind of window a
+// reload of the tiles could.
+void LoadTilesetBankPalettes(void)
 {
     u8 bank;
 
     for (bank = 1; bank < sTilesetBankCount; bank++)
     {
-        u32 tileBase;
-        u16 palBase;
-
-        if (sTilesetBanks[bank].loaded)
-            continue;
-
-        tileBase = TILESET_BANK_TILE_BASE(bank);
-        palBase = PLTT_ID(TILESET_BANK_PAL_BASE(bank));
-
-        CopyTilesetToVramDirect(sTilesetBanks[bank].primary, NUM_TILES_IN_PRIMARY, tileBase);
-        CopyTilesetToVramDirect(sTilesetBanks[bank].secondary, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY,
-                                tileBase + NUM_TILES_IN_PRIMARY);
+        u16 palBase = PLTT_ID(TILESET_BANK_PAL_BASE(bank));
 
         LoadTilesetPalette(sTilesetBanks[bank].primary, palBase,
                            NUM_PALS_IN_PRIMARY * PLTT_SIZE_4BPP);
         LoadTilesetPalette(sTilesetBanks[bank].secondary, palBase + PLTT_ID(NUM_PALS_IN_PRIMARY),
                            (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
-
-        sTilesetBanks[bank].loaded = TRUE;
     }
 }
 

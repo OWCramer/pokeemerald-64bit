@@ -15,7 +15,7 @@ void *INTR_VECTOR;
 #define GBA_GUARD_BYTE 0xA5
 unsigned char REG_BASE[0x400 + GBA_GUARD] __attribute__ ((aligned (4)));
 unsigned char PLTT[PLTT_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
-unsigned char VRAM_[VRAM_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
+unsigned char VRAM_[VRAM_TOTAL_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
 unsigned char OAM[OAM_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
 unsigned char FLASH_BASE[FLASH_BACKING_SIZE + GBA_GUARD] __attribute__ ((aligned (4)));
 
@@ -23,7 +23,7 @@ static const struct { const char *name; unsigned char *base; unsigned long size;
 sGuardedBlocks[] = {
     { "REG_BASE",   REG_BASE,   0x400 },
     { "PLTT",       PLTT,       PLTT_SIZE },
-    { "VRAM_",      VRAM_,      VRAM_SIZE },
+    { "VRAM_",      VRAM_,      VRAM_TOTAL_SIZE },
     { "OAM",        OAM,        OAM_SIZE },
     { "FLASH_BASE", FLASH_BASE, FLASH_BACKING_SIZE },
 };
@@ -53,7 +53,7 @@ void GbaGuardsCheck(const char *where)
 #else
 unsigned char REG_BASE[0x400] __attribute__ ((aligned (4)));
 unsigned char PLTT[PLTT_SIZE] __attribute__ ((aligned (4)));
-unsigned char VRAM_[VRAM_SIZE] __attribute__ ((aligned (4)));
+unsigned char VRAM_[VRAM_TOTAL_SIZE] __attribute__ ((aligned (4)));
 unsigned char OAM[OAM_SIZE] __attribute__ ((aligned (4)));
 unsigned char FLASH_BASE[FLASH_BACKING_SIZE] __attribute__ ((aligned (4)));
 #endif

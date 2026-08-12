@@ -15,6 +15,7 @@
 #include "gba/flash_internal.h"
 #include "load_save.h"
 #include "gpu_regs.h"
+#include "fieldmap.h"
 #include "agb_flash.h"
 #include "sound.h"
 #include "battle.h"
@@ -118,6 +119,8 @@ void AgbMain(void)
     ResetBgs();
     SetDefaultFontsPointer();
     InitHeap(gHeap, HEAP_SIZE);
+    // Every tileset in the game, loaded once, before anything can ask for one.
+    InitTilesetBanks();
 
     gSoftResetDisabled = FALSE;
 

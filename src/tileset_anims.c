@@ -7,15 +7,13 @@
 #include "battle_transition.h"
 #include "fieldmap.h"
 
-// Room for every bank's copy of a frame, not just the current map's -- see
-// MirrorTilesetAnimToBanks. gTileset_General alone queues five transfers a
-// frame, so the vanilla 20 would overflow with two connected maps on screen and
-// silently drop whichever animations came last.
+// Twice vanilla's 20: every frame is queued once for the stock VRAM layout and
+// once for the tileset slot the field actually draws from.
 static EWRAM_DATA struct {
     const u16 *src;
     u16 *dest;
     u16 size;
-} sTilesetDMA3TransferBuffer[20 * MAX_TILESET_BANKS] = {0};
+} sTilesetDMA3TransferBuffer[40] = {0};
 
 static u8 sTilesetDMA3TransferBufferSize;
 static u16 sPrimaryTilesetAnimCounter;
@@ -565,51 +563,50 @@ static void QueueTilesetAnimTransfer(const u16 *src, u16 *dest, u16 size)
     }
 }
 
-// Every animation destination in this file is a tile in the current map's
-// tileset. Each extra tileset bank holds its own copy of those tiles, so a
-// frame has to be written to every bank that shares the tileset it belongs to
-// -- otherwise the same stretch of water animates on one side of a map seam and
-// stands still on the other.
+// Every animation destination in this file is a tile of the current map's
+// tileset, addressed in the stock VRAM layout. The field draws from tileset
+// slots instead, so the frame has to be written there as well.
 //
-// Only tilesets shared with the current map animate this way, which in practice
-// means all of the outdoor animation: water, waterfalls, shorelines and flowers
-// all live in gTileset_General, the primary every Hoenn overworld map uses. A
-// connected map whose own secondary animates -- a town fountain, a flag --
-// shows its first frame; running those would need a second set of animation
-// callbacks and counters for every bank.
-static void MirrorTilesetAnimToBanks(const u16 *src, u16 *dest, u16 size)
+// One tileset is one slot, however many maps share it, so this is a single
+// extra transfer rather than a copy per map -- and every map using that tileset
+// animates in step for free. That is what covers all of the outdoor animation:
+// water, waterfalls, shorelines and flowers all live in gTileset_General, the
+// primary every Hoenn overworld map uses.
+//
+// A neighbouring map whose own secondary animates -- a town fountain, a flag --
+// still shows its first frame, because only the current map's animation
+// callbacks are running. That needs a set of callbacks and counters per
+// tileset, not just somewhere to put the result.
+static void RedirectTilesetAnimToSlot(const u16 *src, u16 *dest, u16 size)
 {
     u32 tile = (u32)((u8 *)dest - (u8 *)BG_VRAM) / TILE_SIZE_4BPP;
-    bool32 inPrimary = tile < NUM_TILES_IN_PRIMARY;
     const struct Tileset *animated;
-    u8 bank;
+    u32 slotBase;
 
     if (tile >= NUM_TILES_TOTAL || gMapHeader.mapLayout == NULL)
         return;
 
-    // Every destination here is a tile in the current map's tileset, which is
-    // what decides which banks hold a copy of it -- including the current map's
-    // own bank, since the field draws from banks rather than from the stock
-    // layout these writes land in.
-    animated = inPrimary ? gMapHeader.mapLayout->primaryTileset
-                         : gMapHeader.mapLayout->secondaryTileset;
-    if (animated == NULL)
+    if (tile < NUM_TILES_IN_PRIMARY)
+    {
+        animated = gMapHeader.mapLayout->primaryTileset;
+    }
+    else
+    {
+        animated = gMapHeader.mapLayout->secondaryTileset;
+        tile -= NUM_TILES_IN_PRIMARY;
+    }
+
+    slotBase = GetTilesetSlotTileBase(animated);
+    if (slotBase == 0)
         return;
 
-    for (bank = 1; bank < GetTilesetBankCount(); bank++)
-    {
-        const struct Tileset *tileset = inPrimary ? GetTilesetBankPrimary(bank)
-                                                  : GetTilesetBankSecondary(bank);
-
-        if (tileset == animated)
-            QueueTilesetAnimTransfer(src, (u16 *)((u8 *)dest + TILESET_BANK_TILE_BASE(bank) * TILE_SIZE_4BPP), size);
-    }
+    QueueTilesetAnimTransfer(src, (u16 *)((u8 *)BG_VRAM + (slotBase + tile) * TILE_SIZE_4BPP), size);
 }
 
 static void AppendTilesetAnimToBuffer(const u16 *src, u16 *dest, u16 size)
 {
     QueueTilesetAnimTransfer(src, dest, size);
-    MirrorTilesetAnimToBanks(src, dest, size);
+    RedirectTilesetAnimToSlot(src, dest, size);
 }
 
 void TransferTilesetAnimsBuffer(void)

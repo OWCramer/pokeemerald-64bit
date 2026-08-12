@@ -168,14 +168,17 @@ static inline uint32_t FetchBgEntry(const uint16_t *bgmap, const uint8_t *bankma
     return bgmap[rowLoc + (tx & 31)];
 }
 
-// Where a bank's tiles and palettes start. Bank 0 -- the map the player is
-// standing on -- is 0/0, so an ordinary BG decodes exactly as it did before.
-// The tile base counts 4bpp tiles, which is what every extended BG is; a bank
-// is only ever tagged onto the field's tilemaps.
-static inline unsigned int BankTileBase(unsigned int bank)
-{
-    return TILESET_BANK_TILE_BASE(bank);
-}
+// A tileset id is only meaningful against a tileset pair, and the two halves of
+// that pair are stored separately -- one slot per tileset in the game, so a
+// primary shared by seventy maps is held once. Which slot a tile comes from is
+// decided by the same split the metatile id already uses: below
+// NUM_TILES_IN_PRIMARY it is the pair's primary, at or above it the secondary.
+//
+// Rather than branch on that in the inner loop, each bank publishes the delta
+// to add for each half, indexed by the top bit of the 10-bit tile id. Bank 0 --
+// no bank -- has both deltas zero, so an ordinary BG decodes exactly as it did
+// before any of this existed.
+u32 gTilesetBankTileDelta[MAX_TILESET_BANKS][2];
 
 static inline unsigned int BankPalBase(unsigned int bank)
 {
@@ -184,12 +187,13 @@ static inline unsigned int BankPalBase(unsigned int bank)
 
 // Split out of the twelve places that decode an entry so a bank cannot be
 // honoured in some of them and forgotten in the rest.
-#define DECODE_BG_ENTRY()                                        \
-    do {                                                         \
-        unsigned int bank_ = entry >> 16;                        \
-        tileNum = (entry & 0x3FF) + BankTileBase(bank_);         \
-        paletteNum = ((entry >> 12) & 0xF) + BankPalBase(bank_); \
-        palBase = is8bpp ? 0 : (paletteNum << 4);                \
+#define DECODE_BG_ENTRY()                                                  \
+    do {                                                                   \
+        unsigned int bank_ = entry >> 16;                                  \
+        unsigned int tile_ = entry & 0x3FF;                                \
+        tileNum = tile_ + gTilesetBankTileDelta[bank_][tile_ >> 9];        \
+        paletteNum = ((entry >> 12) & 0xF) + BankPalBase(bank_);           \
+        palBase = is8bpp ? 0 : (paletteNum << 4);                          \
     } while (0)
 
 static const uint16_t bgMapSizes[][2] =

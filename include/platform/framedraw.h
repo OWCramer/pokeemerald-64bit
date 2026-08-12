@@ -28,6 +28,12 @@ struct BgExtMap
 };
 extern struct BgExtMap gBgExt[4];
 
+// What to add to a tilemap entry's 10-bit tile id to reach the tileset slot it
+// really lives in, indexed by [bank][id >= NUM_TILES_IN_PRIMARY]. Filled in by
+// fieldmap.c when a bank is assigned; bank 0 stays zero, which is the stock
+// VRAM layout. See docs/WIDE_VIEW_TILESET_BANKS.md.
+extern u32 gTilesetBankTileDelta[MAX_TILESET_BANKS][2];
+
 void SetRenderSize(int w, int h);
 void SetRenderExpansionAllowed(bool32 allowed);
 void GetRequestedRenderSize(int *w, int *h);

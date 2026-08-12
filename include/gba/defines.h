@@ -40,15 +40,24 @@
 // Once a pair is assigned a bank it keeps it for the rest of the session and
 // its tiles are never reloaded, so a bank id can never go stale under a tilemap
 // that still refers to it.
+// Tiles are stored per tileset, not per bank. Every tileset in the game gets a
+// slot of its own, loaded once at boot, and a bank just names the two slots its
+// pair resolves to -- so gTileset_General is held once rather than copied into
+// each of the seventy-odd banks that use it.
+#define MAX_TILESET_SLOTS        80
+#define TILESET_SLOT_NUM_TILES   512 // what a primary or a secondary occupies
+#define TILESET_SLOT_VRAM_SIZE   (TILESET_SLOT_NUM_TILES * 32) // 4bpp
+#define TILESET_SLOT_TILE_BASE(i) ((VRAM_SIZE / 32) + (i) * TILESET_SLOT_NUM_TILES)
+
+// Palettes stay per bank: a metatile's palette number is 0-15 with the split at
+// NUM_PALS_IN_PRIMARY, and 13-15 are outside either half of the pair, so
+// resolving them per tileset would need a third case in the renderer's inner
+// loop to buy back 20 KB. A bank's sixteen sit together instead.
 #define MAX_TILESET_BANKS        80
-#define TILESET_BANK_NUM_TILES   1024
 #define TILESET_BANK_NUM_PALS    16
-#define TILESET_BANK_VRAM_SIZE   (TILESET_BANK_NUM_TILES * 32) // 4bpp
-#define TILESET_BANK_PLTT_SIZE   (TILESET_BANK_NUM_PALS * 32)  // 16 colours, 2 bytes each
-#define TILESET_BANK_VRAM_START  0x20000
+#define TILESET_BANK_PLTT_SIZE   (TILESET_BANK_NUM_PALS * 32) // 16 colours, 2 bytes each
 #define TILESET_BANK_PLTT_START  32 // in palettes, i.e. just past the OBJ palettes
 
-#define TILESET_BANK_TILE_BASE(n) ((n) == 0 ? 0 : (TILESET_BANK_VRAM_START / 32) + ((n) - 1) * TILESET_BANK_NUM_TILES)
 #define TILESET_BANK_PAL_BASE(n)  ((n) == 0 ? 0 : TILESET_BANK_PLTT_START + ((n) - 1) * TILESET_BANK_NUM_PALS)
 
 #define BG_PLTT_SIZE  0x200
@@ -80,12 +89,17 @@ extern unsigned char PLTT[PLTT_SIZE] __attribute__ ((aligned (4)));
 // Extended past the GBA's 96K: the field BGs are 512x512, which needs four
 // 2K screenblocks each. They are placed at 0x18000+, above OBJ VRAM, so the
 // stock BG (0x0000-0xFFFF) and OBJ (0x10000-0x17FFF) layout is untouched.
-// Above all of that, at TILESET_BANK_VRAM_START, sit the extra tileset banks.
-#define VRAM_SIZE (TILESET_BANK_VRAM_START + (MAX_TILESET_BANKS - 1) * TILESET_BANK_VRAM_SIZE)
+//
+// VRAM_SIZE stays the size of that stock region, because three dozen screens
+// clear VRAM with it on their way in and would otherwise wipe the tileset slots
+// stacked above -- which are loaded once at boot and never reloaded. Only the
+// allocation itself uses VRAM_TOTAL_SIZE.
+#define VRAM_SIZE 0x20000
+#define VRAM_TOTAL_SIZE (VRAM_SIZE + MAX_TILESET_SLOTS * TILESET_SLOT_VRAM_SIZE)
 #ifndef PORTABLE
 #define VRAM      0x6000000
 #else
-extern unsigned char VRAM_[VRAM_SIZE] __attribute__ ((aligned (4)));
+extern unsigned char VRAM_[VRAM_TOTAL_SIZE] __attribute__ ((aligned (4)));
 #ifdef NATIVE_BUILD
 // A u32 cast truncates the address on a 64-bit host. u8 * keeps the byte
 // arithmetic these macros rely on (VRAM + 0x10000) and still passes to void *.
