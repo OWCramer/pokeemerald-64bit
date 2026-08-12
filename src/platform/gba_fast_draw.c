@@ -2258,7 +2258,7 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
                     scanline->winMask[global_x] = (REG_WINOUT >> 8) & 0x3F;
                     continue;
                 }*/
-                if (windowsEnabled && !(scanline->winMask[global_x] & WINMASK_OBJ) && IsInsideWinIn == true)
+                if (windowsEnabled && !(scanline->winMask[global_x] & WINMASK_OBJ))
                 {
                     continue;
                 }
@@ -2267,10 +2267,7 @@ static void inline_hack DrawAffineSprite(int SpriteIndex, struct scanlineData* s
                 if (global_x < (unsigned int)gRenderWidth && global_x >= 0)
                 {
                     //check if its enabled in the window (if window is enabled)
-                    if (IsInsideWinIn == true)
-                        winShouldBlendPixel = (windowsEnabled == false || scanline->winMask[global_x] & WINMASK_CLR);
-                    else
-                        winShouldBlendPixel = (windowsEnabled == false || REG_WINOUT & WINOUT_WIN01_CLR);
+                    winShouldBlendPixel = (windowsEnabled == false || scanline->winMask[global_x] & WINMASK_CLR);
                     //has to be separated from the blend mode switch statement because of OBJ semi transparancy feature
                     if ((blendMode == 1 && REG_BLDCNT & BLDCNT_TGT1_OBJ && winShouldBlendPixel) || isSemiTransparent)
                     {
@@ -2397,9 +2394,9 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                     if (blendMode != 0 || isSemiTransparent) //Windowing and blending
                     {
                         #define writeSpritePixelWinBlend(pixel, x) \
-                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
+                            if (pixel && ((scanline->winMask[x] & WINMASK_OBJ))) { \
                                 uint16_t color = palette[pixel]; \
-                                winShouldBlendPixel = (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_CLR); \
+                                winShouldBlendPixel = (scanline->winMask[x] & WINMASK_CLR); \
                                 \
                                 if (((blendMode == 1 && REG_BLDCNT & BLDCNT_TGT1_OBJ) && winShouldBlendPixel) || isSemiTransparent) \
                                 { \
@@ -2449,7 +2446,7 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
                     else //Windowing
                     {
                         #define writeSpritePixelWin(pixel, x) \
-                            if (pixel && ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)))) { \
+                            if (pixel && ((scanline->winMask[x] & WINMASK_OBJ))) { \
                                 pixels[x] = palette[pixel] | (1 << 15); \
                                 scanline->bgMask[x] = (1 << 4); \
                             }
@@ -2571,11 +2568,11 @@ static void inline_hack DrawNonAffineSprite(int SpriteIndex, struct scanlineData
             {
                 bool winShouldDraw = true;
                 #define writeSpritePixel(pixel, x) \
-                    winShouldDraw = windowsEnabled == false || ((IsInsideWinIn && scanline->winMask[x] & WINMASK_OBJ) || (!IsInsideWinIn && ((REG_WINOUT & WINOUT_WIN01_OBJ) || vcount < 0 || vcount >= DISPLAY_HEIGHT)));\
+                    winShouldDraw = windowsEnabled == false || ((scanline->winMask[x] & WINMASK_OBJ));\
                     if (pixel && winShouldDraw) { \
                         uint16_t color = palette[pixel]; \
                         \
-                        winShouldBlendPixel = windowsEnabled == false || ( (IsInsideWinIn && scanline->winMask[x] & WINMASK_CLR) || (!IsInsideWinIn && REG_WINOUT & WINOUT_WIN01_CLR) ); \
+                        winShouldBlendPixel = windowsEnabled == false || ( (scanline->winMask[x] & WINMASK_CLR) ); \
                         if ((blendMode == 1 && REG_BLDCNT & BLDCNT_TGT1_OBJ && winShouldBlendPixel) || isSemiTransparent) \
                         { \
                             if (scanline->bgMask[x] & (REG_BLDCNT >> 8)) \
@@ -2717,9 +2714,10 @@ static void DrawSprites(struct scanlineData* scanline, int vcount, bool windowsE
     
     if (windowsEnabled == true && IsInsideWinIn == false)
     {
-        // Same as the backgrounds: sprites on rows beyond the vanilla view are
-        // not subject to a window that only spans 240x160.
-        if (!(REG_WINOUT & WINOUT_WIN01_OBJ) && vcount >= 0 && vcount < DISPLAY_HEIGHT)
+        // Every pixel of this row is outside the windows, so if WINOUT hides
+        // sprites there is nothing to draw. Rows past the vanilla view are no
+        // exception -- being outside a 240x160 window is what puts them here.
+        if (!(REG_WINOUT & WINOUT_WIN01_OBJ))
             return;
     }
 
@@ -2822,33 +2820,37 @@ static void DrawScanline(uint16_t *pixels, int vcount)
         scanline.winMask[xpos] = WINMASK_BG0 | WINMASK_BG1 | WINMASK_BG2
                                | WINMASK_BG3 | WINMASK_OBJ | WINMASK_CLR;
 
-    //draw to pixel mask
-    if (IsInsideWinIn)
+    // Draw to pixel mask.
+    //
+    // Windows are a 240x160 concept, and a pixel outside that rectangle is
+    // outside every one of them -- which is exactly what WINOUT describes. The
+    // extended area used to be exempted and shown in full, so the flash in a
+    // dark cave lit up everything past the vanilla screen: that black is WINOUT
+    // hiding the map layers, and it stopped at 240 wide.
+    //
+    // Filled whenever a window is enabled at all, rather than only when one
+    // covers this scanline. A row above or below every window is still a row
+    // every pixel of which is outside them, and WIN0enable already carries the
+    // vertical test, so those rows fall through to WINOUT on their own.
+    //
+    // Expansion is only ever on in the field, where WINOUT is BG0 alone, so
+    // this cannot blank a screen that was relying on the exemption.
+    if (windowsEnabled)
     {
         for (xpos = 0; xpos < (unsigned)gRenderWidth; xpos++)
         {
-            //win0 checks
             int gx = (int)xpos - gRenderOffsetX;
-            bool inView = (gx >= 0 && gx < DISPLAY_WIDTH
-                        && vcount >= 0 && vcount < DISPLAY_HEIGHT);
-            if (!inView)
-            {
-                // Windows are a 240x160 concept. Applying WINOUT out here blanked
-                // every layer -- REG_WINOUT is commonly 0, meaning "show nothing
-                // outside the window" -- which is what produced the black band
-                // above the view. The extended area simply shows everything.
-                scanline.winMask[xpos] = WINMASK_BG0 | WINMASK_BG1 | WINMASK_BG2
-                                       | WINMASK_BG3 | WINMASK_OBJ | WINMASK_CLR;
-            }
-            else if (WIN0enable && winCheckHorizontalBounds(WIN0left, WIN0right, (u16)gx))
+            bool inView = (gx >= 0 && gx < DISPLAY_WIDTH);
+
+            if (inView && WIN0enable && winCheckHorizontalBounds(WIN0left, WIN0right, (u16)gx))
                 scanline.winMask[xpos] = REG_WININ & 0x3F;
-            else if (WIN1enable && winCheckHorizontalBounds(WIN1left, WIN1right, (u16)gx))
+            else if (inView && WIN1enable && winCheckHorizontalBounds(WIN1left, WIN1right, (u16)gx))
                 scanline.winMask[xpos] = (REG_WININ >> 8) & 0x3F;
             else
                 scanline.winMask[xpos] = (REG_WINOUT & 0x3F) | WINMASK_WINOUT;
         }
     }
-    
+
     //draw to window mask if OBJwin is enabled
     if (REG_DISPCNT & DISPCNT_OBJWIN_ON && REG_DISPCNT & DISPCNT_OBJ_ON)
         DrawSpritesWinMask(&scanline, vcount);
