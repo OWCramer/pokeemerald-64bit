@@ -584,10 +584,15 @@ static void MirrorTilesetAnimToBanks(const u16 *src, u16 *dest, u16 size)
     const struct Tileset *animated;
     u8 bank;
 
-    if (tile >= NUM_TILES_TOTAL)
+    if (tile >= NUM_TILES_TOTAL || gMapHeader.mapLayout == NULL)
         return;
 
-    animated = inPrimary ? GetTilesetBankPrimary(0) : GetTilesetBankSecondary(0);
+    // Every destination here is a tile in the current map's tileset, which is
+    // what decides which banks hold a copy of it -- including the current map's
+    // own bank, since the field draws from banks rather than from the stock
+    // layout these writes land in.
+    animated = inPrimary ? gMapHeader.mapLayout->primaryTileset
+                         : gMapHeader.mapLayout->secondaryTileset;
     if (animated == NULL)
         return;
 

@@ -25,17 +25,22 @@
 
 #define ALIGNED(n) __attribute__((aligned(n)))
 
-// Extra tileset banks. The expanded viewport shows whole neighbouring maps, but
-// a map's metatile ids only mean anything against its own tileset pair, so
-// every distinct pair on screen gets a bank: a full 1024-tile, 16-palette copy
-// of the tileset space the GBA can address at once. Bank 0 is the map the
-// player is standing on and keeps the vanilla tile 0 / palette 0 bases, so
-// nothing but a connected map's cells pays for any of this. See
-// docs/WIDE_VIEW_TILESET_BANKS.md.
+// Tileset banks. The expanded viewport shows whole neighbouring maps, but a
+// map's metatile ids only mean anything against its own tileset pair, so every
+// pair gets a bank: a full 1024-tile, 16-palette copy of the tileset space the
+// GBA can address at once. See docs/WIDE_VIEW_TILESET_BANKS.md.
 //
 // Banks are stacked above the stock VRAM and palette layout rather than carved
 // out of it, so every address the rest of the game already uses is untouched.
-#define MAX_TILESET_BANKS        8
+// Bank 0 is not a bank: it means "no bank", and decodes against the stock
+// layout, which is what every menu and text box does.
+//
+// There are 76 distinct tileset pairs in the whole game, so a bank per pair is
+// 2.4 MB of tiles -- nothing on a host, and the reason banks are permanent.
+// Once a pair is assigned a bank it keeps it for the rest of the session and
+// its tiles are never reloaded, so a bank id can never go stale under a tilemap
+// that still refers to it.
+#define MAX_TILESET_BANKS        80
 #define TILESET_BANK_NUM_TILES   1024
 #define TILESET_BANK_NUM_PALS    16
 #define TILESET_BANK_VRAM_SIZE   (TILESET_BANK_NUM_TILES * 32) // 4bpp

@@ -31,9 +31,9 @@ EWRAM_DATA static u16 ALIGNED(4) sBackupMapData[MAX_MAP_DATA_SIZE] = {0};
 // Which tileset bank each cell's metatile id should be decoded against.
 //
 // A map cell is 16 bits with no room to spare (10 metatile id, 2 collision,
-// 4 elevation), so the bank cannot live in the cell itself. Bank 0 is always
-// the current map; connections register their own secondary tileset and write
-// their bank id here for every cell they fill.
+// 4 elevation), so the bank cannot live in the cell itself. Every cell starts
+// tagged with the current map's bank; connections write their own map's bank
+// over the cells they fill.
 //
 // Without this, a neighbouring map's metatile id >= NUM_METATILES_IN_PRIMARY
 // was decoded against the *current* map's secondary tileset -- correct data
@@ -47,18 +47,24 @@ struct TilesetBank
 {
     const struct Tileset *primary;
     const struct Tileset *secondary;
+    bool8 loaded;
 };
 
+// Permanent, and deliberately so. An earlier version renumbered these on every
+// map load -- the map being entered took bank 0 and the one being left became a
+// connection -- which meant every tag already in a tilemap had to be translated
+// in step with the rebuild, and every bank's tiles had to be reloaded. Any gap
+// in that choreography showed up as a frame of a neighbouring map drawn against
+// the wrong tileset. There are only 76 distinct pairs in the game, so instead a
+// pair keeps its bank for the session and its tiles are loaded once: a tag can
+// no longer mean something different from one frame to the next.
+//
+// Slot 0 is reserved. Bank 0 means "no bank" -- the stock VRAM and palette
+// layout -- so an unbanked BG and a bank that could not be assigned both decode
+// exactly the way they did before any of this existed.
 static struct TilesetBank sTilesetBanks[MAX_TILESET_BANKS];
-static u8 sTilesetBankCount;
-
-// A map transition renumbers the banks: the map just walked into becomes bank 0
-// and the one just left becomes one of its connections. Anything already tagged
-// with the old numbering has to be translated, so the registry from before the
-// rebuild is kept long enough to match the pairs up.
-static struct TilesetBank sPrevTilesetBanks[MAX_TILESET_BANKS];
-static u8 sPrevTilesetBankCount;
-static u8 sTilesetBankRemap[MAX_TILESET_BANKS];
+static u8 sTilesetBankCount = 1;
+static u8 sCurrentTilesetBank;
 EWRAM_DATA struct MapHeader gMapHeader = {0};
 EWRAM_DATA struct Camera gCamera = {0};
 EWRAM_DATA static struct ConnectionFlags sMapConnectionFlags = {0};
@@ -128,15 +134,15 @@ void InitTrainerHillMap(void)
     GenerateTrainerHillFloorLayout(sBackupMapData);
 }
 
-// Returns the bank for a tileset pair, registering it if new. Bank 0 is
-// reserved for the current map, so a pair that will not fit (more distinct
-// tilesets on screen than banks) falls back to it -- the old,
+// Returns the bank for a tileset pair, assigning one if the pair has not been
+// seen before. A pair that will not fit -- more distinct pairs in one session
+// than there are banks -- falls back to bank 0, which is the old
 // wrong-but-harmless behaviour rather than an out-of-range bank.
 static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tileset *secondary)
 {
     u8 i;
 
-    for (i = 0; i < sTilesetBankCount; i++)
+    for (i = 1; i < sTilesetBankCount; i++)
     {
         if (sTilesetBanks[i].primary == primary && sTilesetBanks[i].secondary == secondary)
             return i;
@@ -146,22 +152,28 @@ static u8 RegisterTilesetBank(const struct Tileset *primary, const struct Tilese
     {
         sTilesetBanks[sTilesetBankCount].primary = primary;
         sTilesetBanks[sTilesetBankCount].secondary = secondary;
+        sTilesetBanks[sTilesetBankCount].loaded = FALSE;
         return sTilesetBankCount++;
     }
 
     return 0;
 }
 
-// Drops every bank but the current map's and clears the cell tags. The Battle
-// Pyramid and Trainer Hill generate their floors without going through
-// InitMapLayoutData, so without this they would draw against whatever banks the
-// previous map happened to register.
+// Tags every cell with the current map's bank. Connections overwrite the cells
+// they fill; the Battle Pyramid and Trainer Hill generate their floors without
+// going through InitMapLayoutData and call this directly.
 static void ResetTilesetBanks(void)
 {
-    memset(sBackupMapBank, 0, sizeof(sBackupMapBank));
-    sTilesetBankCount = 0;
+    sCurrentTilesetBank = 0;
     if (gMapHeader.mapLayout != NULL)
-        RegisterTilesetBank(gMapHeader.mapLayout->primaryTileset, gMapHeader.mapLayout->secondaryTileset);
+        sCurrentTilesetBank = RegisterTilesetBank(gMapHeader.mapLayout->primaryTileset,
+                                                  gMapHeader.mapLayout->secondaryTileset);
+    memset(sBackupMapBank, sCurrentTilesetBank, sizeof(sBackupMapBank));
+}
+
+u8 GetCurrentTilesetBank(void)
+{
+    return sCurrentTilesetBank;
 }
 
 const struct Tileset *GetTilesetBankPrimary(u8 bank)
@@ -183,37 +195,6 @@ u8 GetTilesetBankCount(void)
     return sTilesetBankCount;
 }
 
-// Maps a bank id from before the last layout rebuild to the same tileset pair's
-// id now. A pair that is no longer on screen maps to bank 0 -- those cells
-// belong to a map this one is not connected to, so they are stale either way,
-// and bank 0 is what they would have been drawn with before banks existed.
-static void BuildTilesetBankRemap(void)
-{
-    u8 old, i;
-
-    for (old = 0; old < MAX_TILESET_BANKS; old++)
-    {
-        sTilesetBankRemap[old] = 0;
-        if (old >= sPrevTilesetBankCount)
-            continue;
-
-        for (i = 0; i < sTilesetBankCount; i++)
-        {
-            if (sTilesetBanks[i].primary == sPrevTilesetBanks[old].primary
-             && sTilesetBanks[i].secondary == sPrevTilesetBanks[old].secondary)
-            {
-                sTilesetBankRemap[old] = i;
-                break;
-            }
-        }
-    }
-}
-
-const u8 *GetTilesetBankRemap(void)
-{
-    return sTilesetBankRemap;
-}
-
 u8 MapGridGetTilesetBankAt(s32 x, s32 y)
 {
     if (!AreCoordsWithinMapGridBounds(x, y))
@@ -228,25 +209,17 @@ static void InitMapLayoutData(const struct MapHeader *mapHeader)
 
     // Everything defaults to the current map's bank; connections overwrite the
     // cells they fill.
-    memcpy(sPrevTilesetBanks, sTilesetBanks, sizeof(sTilesetBanks));
-    sPrevTilesetBankCount = sTilesetBankCount;
-    memset(sBackupMapBank, 0, sizeof(sBackupMapBank));
-    sTilesetBankCount = 0;
-    RegisterTilesetBank(mapLayout->primaryTileset, mapLayout->secondaryTileset);
+    ResetTilesetBanks();
 
     gBackupMapLayout.map = sBackupMapData;
     gBackupMapLayout.width = mapLayout->width + MAP_OFFSET_W + MAP_BORDER_EXTRA * 2;
     gBackupMapLayout.height = mapLayout->height + MAP_OFFSET_H + MAP_BORDER_EXTRA * 2;
 
     if (gBackupMapLayout.width * gBackupMapLayout.height > MAX_MAP_DATA_SIZE)
-    {
-        BuildTilesetBankRemap();
         return;
-    }
 
     InitBackupMapLayoutData(mapLayout->map, mapLayout->width, mapLayout->height);
     InitBackupMapLayoutConnections(mapHeader);
-    BuildTilesetBankRemap();
 }
 
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
@@ -1118,43 +1091,37 @@ static void CopyTilesetToVramDirect(struct Tileset const *tileset, u16 numTiles,
     }
 }
 
-// Loads every bank a connection registered. Bank 0 is the current map, already
-// loaded by the normal path, so it is skipped. Both halves of the pair are
-// loaded even when the primary matches the current map's -- copying the
-// already-decompressed tiles out of VRAM instead would depend on the primary
-// having finished its asynchronous load, which is not true at every call site.
+// Loads any bank that has been assigned but not yet filled. A bank is loaded
+// once and then left alone for the rest of the session, so walking back and
+// forth across a map seam costs nothing after the first crossing and, more to
+// the point, no tilemap can be left pointing at a bank whose contents have
+// changed underneath it.
 void LoadTilesetBanks(void)
 {
     u8 bank;
 
     for (bank = 1; bank < sTilesetBankCount; bank++)
     {
-        u32 tileBase = TILESET_BANK_TILE_BASE(bank);
-        u16 palBase = PLTT_ID(TILESET_BANK_PAL_BASE(bank));
+        u32 tileBase;
+        u16 palBase;
+
+        if (sTilesetBanks[bank].loaded)
+            continue;
+
+        tileBase = TILESET_BANK_TILE_BASE(bank);
+        palBase = PLTT_ID(TILESET_BANK_PAL_BASE(bank));
 
         CopyTilesetToVramDirect(sTilesetBanks[bank].primary, NUM_TILES_IN_PRIMARY, tileBase);
         CopyTilesetToVramDirect(sTilesetBanks[bank].secondary, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY,
-                              tileBase + NUM_TILES_IN_PRIMARY);
+                                tileBase + NUM_TILES_IN_PRIMARY);
 
         LoadTilesetPalette(sTilesetBanks[bank].primary, palBase,
                            NUM_PALS_IN_PRIMARY * PLTT_SIZE_4BPP);
         LoadTilesetPalette(sTilesetBanks[bank].secondary, palBase + PLTT_ID(NUM_PALS_IN_PRIMARY),
                            (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
-    }
-}
 
-// Same tiles, but in this frame rather than over the next several.
-//
-// A camera transition swaps the map's secondary tileset while the screen is
-// live: the palettes land immediately, but CopySecondaryTilesetToVramUsingHeap
-// queues its tiles through the DMA3 manager, so for a few frames the map is
-// drawn with the *previous* tileset's tiles under the new one's palettes.
-// Across the seven tiles vanilla showed past a map edge that was invisible;
-// with the expanded viewport the map just walked into is most of the screen,
-// and the mismatch reads as a flicker on every route change.
-void CopySecondaryTilesetToVramNow(struct MapLayout const *mapLayout)
-{
-    CopyTilesetToVramDirect(mapLayout->secondaryTileset, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY, NUM_TILES_IN_PRIMARY);
+        sTilesetBanks[bank].loaded = TRUE;
+    }
 }
 
 void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)

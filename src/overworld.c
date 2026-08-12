@@ -828,24 +828,19 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
     Overworld_ClearSavedMusic();
     RunOnTransitionMapScript();
     InitMap();
-    // Synchronous, not the usual queued load: the palettes below land this
-    // frame, and tiles arriving a few frames later would draw the map with the
-    // tileset it is replacing.
-    CopySecondaryTilesetToVramNow(gMapHeader.mapLayout);
+    CopySecondaryTilesetToVramUsingHeap(gMapHeader.mapLayout);
     LoadSecondaryTilesetPalette(gMapHeader.mapLayout);
-    // InitMap above rebuilt the layout, so the connected maps -- and the banks
-    // their cells are tagged with -- have just changed. The tilemap survives a
-    // seam crossing untouched apart from the slice that scrolled in, so its
-    // tags have to be translated into the new numbering rather than redrawn.
+    // InitMap above rebuilt the layout, so this map's connections -- and any
+    // tileset pair among them being seen for the first time -- have changed.
+    // Banks already loaded are left exactly as they are.
     LoadTilesetBanks();
-    RemapFieldTilemapBanks();
 
     for (paletteIndex = NUM_PALS_IN_PRIMARY; paletteIndex < NUM_PALS_TOTAL; paletteIndex++)
         ApplyWeatherColorMapToPal(paletteIndex);
 
-    // The banks were reloaded above with unmapped colours, and this path never
-    // runs the weather fade-in that would otherwise cover them. Without this a
-    // connected map is lit as if the weather were clear until the player warps.
+    // A bank seen for the first time loads with unmapped colours, and this path
+    // never runs the weather fade-in that would otherwise cover it. Without
+    // this a map is lit as if the weather were clear until the player warps.
     for (bank = 1; bank < GetTilesetBankCount(); bank++)
     {
         for (paletteIndex = 0; paletteIndex < TILESET_BANK_NUM_PALS; paletteIndex++)

@@ -249,29 +249,6 @@ void ResetFieldCamera(void)
     ResetCameraOffset(&sFieldCameraOffset);
 }
 
-// Walking across a map seam rebuilds the layout -- the map just entered becomes
-// bank 0, the one just left becomes a connection -- but the tilemap is not
-// redrawn, only the slice that scrolled in. Every tag already in the plane
-// still names a bank from the old numbering, which for the usual two-map case
-// is exactly the two maps swapped over. Translating the plane in place is what
-// keeps the seam seamless; redrawing the whole window instead would flash the
-// far side of the map on the near side for a frame (see
-// RedrawMapSlicesForCameraUpdate).
-void RemapFieldTilemapBanks(void)
-{
-    const u8 *remap = GetTilesetBankRemap();
-    u32 i, n = (u32)sTilesW * sTilesH;
-
-    if (sFieldTilemapBanks == NULL)
-        return;
-
-    for (i = 0; i < n; i++)
-    {
-        if (sFieldTilemapBanks[i] < MAX_TILESET_BANKS)
-            sFieldTilemapBanks[i] = remap[sFieldTilemapBanks[i]];
-    }
-}
-
 void FieldUpdateBgTilemapScroll(void)
 {
     u32 r4, r5;
@@ -412,7 +389,7 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
     if (offset >= 0)
     {
         // Doors only ever belong to the map the player is on.
-        DrawMetatile(METATILE_LAYER_TYPE_COVERED, tiles, offset, 0);
+        DrawMetatile(METATILE_LAYER_TYPE_COVERED, tiles, offset, GetCurrentTilesetBank());
         sFieldCameraOffset.copyBGToVRAM = TRUE;
     }
 }
