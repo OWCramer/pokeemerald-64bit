@@ -1083,13 +1083,15 @@ void LoadSecondaryTilesetPalette(struct MapLayout const *mapLayout)
     LoadTilesetPalette(mapLayout->secondaryTileset, BG_PLTT_ID(NUM_PALS_IN_PRIMARY), (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
 }
 
+// Writes tiles straight into VRAM, decompressing on the spot.
+//
 // An extra bank's tiles land above TILESET_BANK_VRAM_START, and LoadBgTiles
 // cannot reach there: it computes its destination as a u16 byte offset, which
 // 0x20000 overflows to zero. Nothing about a bank needs the BG plumbing anyway
-// -- no tile allocator, no DMA queue -- so write VRAM directly and
-// synchronously, which also means the caller does not have to wait on a temp
-// buffer the way CopySecondaryTilesetToVram does.
-static void CopyTilesetToVramBank(struct Tileset const *tileset, u16 numTiles, u32 tileOffset)
+// -- no tile allocator, no DMA queue -- and being synchronous means the caller
+// does not have to wait on a temp buffer the way CopySecondaryTilesetToVram
+// does, which is useful below the bank region too.
+static void CopyTilesetToVramDirect(struct Tileset const *tileset, u16 numTiles, u32 tileOffset)
 {
     u8 *dest = (u8 *)VRAM + tileOffset * TILE_SIZE_4BPP;
     u32 size = numTiles * TILE_SIZE_4BPP;
@@ -1130,8 +1132,8 @@ void LoadTilesetBanks(void)
         u32 tileBase = TILESET_BANK_TILE_BASE(bank);
         u16 palBase = PLTT_ID(TILESET_BANK_PAL_BASE(bank));
 
-        CopyTilesetToVramBank(sTilesetBanks[bank].primary, NUM_TILES_IN_PRIMARY, tileBase);
-        CopyTilesetToVramBank(sTilesetBanks[bank].secondary, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY,
+        CopyTilesetToVramDirect(sTilesetBanks[bank].primary, NUM_TILES_IN_PRIMARY, tileBase);
+        CopyTilesetToVramDirect(sTilesetBanks[bank].secondary, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY,
                               tileBase + NUM_TILES_IN_PRIMARY);
 
         LoadTilesetPalette(sTilesetBanks[bank].primary, palBase,
@@ -1139,6 +1141,20 @@ void LoadTilesetBanks(void)
         LoadTilesetPalette(sTilesetBanks[bank].secondary, palBase + PLTT_ID(NUM_PALS_IN_PRIMARY),
                            (NUM_PALS_TOTAL - NUM_PALS_IN_PRIMARY) * PLTT_SIZE_4BPP);
     }
+}
+
+// Same tiles, but in this frame rather than over the next several.
+//
+// A camera transition swaps the map's secondary tileset while the screen is
+// live: the palettes land immediately, but CopySecondaryTilesetToVramUsingHeap
+// queues its tiles through the DMA3 manager, so for a few frames the map is
+// drawn with the *previous* tileset's tiles under the new one's palettes.
+// Across the seven tiles vanilla showed past a map edge that was invisible;
+// with the expanded viewport the map just walked into is most of the screen,
+// and the mismatch reads as a flicker on every route change.
+void CopySecondaryTilesetToVramNow(struct MapLayout const *mapLayout)
+{
+    CopyTilesetToVramDirect(mapLayout->secondaryTileset, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY, NUM_TILES_IN_PRIMARY);
 }
 
 void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)

@@ -828,7 +828,10 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
     Overworld_ClearSavedMusic();
     RunOnTransitionMapScript();
     InitMap();
-    CopySecondaryTilesetToVramUsingHeap(gMapHeader.mapLayout);
+    // Synchronous, not the usual queued load: the palettes below land this
+    // frame, and tiles arriving a few frames later would draw the map with the
+    // tileset it is replacing.
+    CopySecondaryTilesetToVramNow(gMapHeader.mapLayout);
     LoadSecondaryTilesetPalette(gMapHeader.mapLayout);
     // InitMap above rebuilt the layout, so the connected maps -- and the banks
     // their cells are tagged with -- have just changed. The tilemap survives a
