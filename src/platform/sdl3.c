@@ -199,10 +199,6 @@ double lastGameTime = 0;
 double curGameTime = 0;
 double fixedTimestep = 1.0 / 60.0;
 double timeScale = 1.0;
-
-// Frame instrumentation, defined further down next to VDraw.
-int EmeraldFrameStatsEnabled(void);
-void EmeraldReportPacing(int framesThisPass, bool32 presented);
 struct SiiRtcInfo internalClock;
 
 static FILE *sSaveFile = NULL;
@@ -337,7 +333,6 @@ int main(int argc, char **argv)
         ProcessEvents();
 
         bool32 didRender = FALSE;
-        int framesThisPass = 0;
 
         if (!paused)
         {
@@ -376,7 +371,6 @@ int main(int argc, char **argv)
 
                     SDL_SignalSemaphore(vBlankSemaphore);
 
-                    framesThisPass++;
                     accumulator -= dt;
                 }
             }
@@ -398,13 +392,6 @@ int main(int argc, char **argv)
         }
         else
             SDL_Delay(1);
-
-        // Neither thread is anywhere near the budget, so if frames look uneven
-        // it is the cadence rather than the work. Counts how many emulated
-        // frames each pass produced -- 1 every time is smooth, a mix of 0 and 2
-        // is judder -- and how far apart the presents actually land.
-        if (EmeraldFrameStatsEnabled())
-            EmeraldReportPacing(framesThisPass, didRender);
     }
 
     StoreSaveFile();
@@ -1452,98 +1439,6 @@ void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 
 // ---------------------------------------------------------------- video
 
-int EmeraldFrameStatsEnabled(void)
-{
-    static int enabled = -1;
-
-    if (enabled < 0)
-    {
-        const char *env = getenv("EMERALD_FRAME_STATS");
-        enabled = (env != NULL && env[0] == '1');
-    }
-    return enabled;
-}
-
-// The game thread's own frame: from waking out of VBlankIntrWait to arriving
-// back at it. Drawing is timed separately in VDraw and has already been ruled
-// out as the cost, so this is the half that was still unmeasured.
-static struct timespec sLogicWake;
-static bool sLogicWakeValid;
-
-void EmeraldMarkLogicWake(void)
-{
-    clock_gettime(CLOCK_MONOTONIC, &sLogicWake);
-    sLogicWakeValid = TRUE;
-}
-
-void EmeraldReportLogicFrame(void)
-{
-    static double accum = 0.0, worst = 0.0;
-    static int frames = 0;
-    struct timespec now;
-    double ms;
-
-    if (!sLogicWakeValid)
-        return;
-
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    ms = (now.tv_sec - sLogicWake.tv_sec) * 1000.0 + (now.tv_nsec - sLogicWake.tv_nsec) / 1000000.0;
-    accum += ms;
-    if (ms > worst)
-        worst = ms;
-    if (++frames == 60)
-    {
-        fprintf(stderr, "[frame] logic avg %.2f ms, worst %.2f ms\n", accum / frames, worst);
-        fflush(stderr);
-        accum = worst = 0.0;
-        frames = 0;
-    }
-}
-
-// How the emulated frames line up with the presents that show them.
-void EmeraldReportPacing(int framesThisPass, bool32 presented)
-{
-    static struct timespec lastPresent;
-    static bool haveLast;
-    static int passes, zero, one, many, presents;
-    static double gapAccum, gapWorst;
-
-    passes++;
-    if (framesThisPass == 0)
-        zero++;
-    else if (framesThisPass == 1)
-        one++;
-    else
-        many++;
-
-    if (presented)
-    {
-        struct timespec now;
-
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        if (haveLast)
-        {
-            double ms = (now.tv_sec - lastPresent.tv_sec) * 1000.0
-                      + (now.tv_nsec - lastPresent.tv_nsec) / 1000000.0;
-            gapAccum += ms;
-            if (ms > gapWorst)
-                gapWorst = ms;
-        }
-        lastPresent = now;
-        haveLast = TRUE;
-        presents++;
-    }
-
-    if (presents == 60)
-    {
-        fprintf(stderr, "[frame] present gap avg %.2f ms, worst %.2f ms | passes drawing 0/1/2+: %d/%d/%d\n",
-                gapAccum / presents, gapWorst, zero, one, many);
-        fflush(stderr);
-        gapAccum = gapWorst = 0.0;
-        passes = zero = one = many = presents = 0;
-    }
-}
-
 void VDraw(SDL_Texture *texture)
 {
     // Sized for the largest viewport; only gRenderWidth x gRenderHeight of it
@@ -1551,40 +1446,7 @@ void VDraw(SDL_Texture *texture)
     static uint16_t image[2048 * 2048];   // RENDER_MAX_WIDTH/HEIGHT
 
     memset(image, 0, (size_t)gRenderWidth * gRenderHeight * sizeof(uint16_t));
-
-    // EMERALD_FRAME_STATS=1 reports how long the software renderer is actually
-    // taking, averaged over a second, against the 16.7ms a frame gets. Guessing
-    // at which part of the scanline loop costs what has not gone well; this is
-    // how to find out instead.
-    {
-        struct timespec t0, t1;
-        static double accum = 0.0, worst = 0.0;
-        static int frames = 0;
-
-        if (!EmeraldFrameStatsEnabled())
-        {
-            DrawFrame(image);
-        }
-        else
-        {
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            DrawFrame(image);
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-
-            double ms = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0;
-            accum += ms;
-            if (ms > worst)
-                worst = ms;
-            if (++frames == 60)
-            {
-                fprintf(stderr, "[frame] draw avg %.2f ms, worst %.2f ms, budget 16.67 ms, viewport %dx%d\n",
-                        accum / frames, worst, gRenderWidth, gRenderHeight);
-                fflush(stderr);
-                accum = worst = 0.0;
-                frames = 0;
-            }
-        }
-    }
+    DrawFrame(image);
 
     // Headless verification: EMERALD_DUMP_FRAME=<n> writes frame n to
     // EMERALD_DUMP_PATH as a PPM, so rendering can be checked with no display
@@ -1658,14 +1520,8 @@ int DoMain(void *data)
 
 void VBlankIntrWait(void)
 {
-    if (EmeraldFrameStatsEnabled())
-        EmeraldReportLogicFrame();
-
     SDL_SetAtomicInt(&isFrameAvailable, 1);
     SDL_WaitSemaphore(vBlankSemaphore);
-
-    if (EmeraldFrameStatsEnabled())
-        EmeraldMarkLogicWake();
 
     // Service a pending soft reset here: this runs on the worker thread, which
     // is the only place DoSoftReset and the longjmp are safe.
