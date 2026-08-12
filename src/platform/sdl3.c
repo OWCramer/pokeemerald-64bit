@@ -1446,7 +1446,47 @@ void VDraw(SDL_Texture *texture)
     static uint16_t image[2048 * 2048];   // RENDER_MAX_WIDTH/HEIGHT
 
     memset(image, 0, (size_t)gRenderWidth * gRenderHeight * sizeof(uint16_t));
-    DrawFrame(image);
+
+    // EMERALD_FRAME_STATS=1 reports how long the software renderer is actually
+    // taking, averaged over a second, against the 16.7ms a frame gets. Guessing
+    // at which part of the scanline loop costs what has not gone well; this is
+    // how to find out instead.
+    {
+        static int statsEnabled = -1;
+        struct timespec t0, t1;
+        static double accum = 0.0, worst = 0.0;
+        static int frames = 0;
+
+        if (statsEnabled < 0)
+        {
+            const char *env = getenv("EMERALD_FRAME_STATS");
+            statsEnabled = (env != NULL && env[0] == '1');
+        }
+
+        if (!statsEnabled)
+        {
+            DrawFrame(image);
+        }
+        else
+        {
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            DrawFrame(image);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+
+            double ms = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0;
+            accum += ms;
+            if (ms > worst)
+                worst = ms;
+            if (++frames == 60)
+            {
+                fprintf(stderr, "[frame] draw avg %.2f ms, worst %.2f ms, budget 16.67 ms, viewport %dx%d\n",
+                        accum / frames, worst, gRenderWidth, gRenderHeight);
+                fflush(stderr);
+                accum = worst = 0.0;
+                frames = 0;
+            }
+        }
+    }
 
     // Headless verification: EMERALD_DUMP_FRAME=<n> writes frame n to
     // EMERALD_DUMP_PATH as a PPM, so rendering can be checked with no display
