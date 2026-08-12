@@ -286,12 +286,27 @@ static const struct DoorGraphics sDoorAnimGraphicsTable[] =
 #define DOOR_TILE_START_SIZE1 (NUM_TILES_TOTAL - 8)
 #define DOOR_TILE_START_SIZE2 (NUM_TILES_TOTAL - 16)
 
+// These land in the tiles a secondary tileset owns, so as well as the stock
+// VRAM layout they have to reach the slot the field actually draws from -- see
+// docs/WIDE_VIEW_TILESET_BANKS.md. Without the second copy a door animates into
+// tiles nothing reads and the doorway is simply black.
+//
+// The clobber this leaves in the slot outlasts the map, where before it lasted
+// until the next tileset load. That is the same bargain the note above already
+// describes: these tiles are scratch space for whichever door is animating, and
+// every door writes its own before drawing.
 static void CopyDoorTilesToVram(const struct DoorGraphics *gfx, const struct DoorAnimFrame *frame)
 {
-    if (gfx->size == 2)
-        CpuFastCopy(gfx->tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(DOOR_TILE_START_SIZE2)), 16 * TILE_SIZE_4BPP);
-    else
-        CpuFastCopy(gfx->tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(DOOR_TILE_START_SIZE1)), 8 * TILE_SIZE_4BPP);
+    u32 numTiles = (gfx->size == 2) ? 16 : 8;
+    u32 tile = (gfx->size == 2) ? DOOR_TILE_START_SIZE2 : DOOR_TILE_START_SIZE1;
+    u32 slotBase = GetTilesetSlotTileBase(gMapHeader.mapLayout->secondaryTileset);
+
+    CpuFastCopy(gfx->tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(tile)), numTiles * TILE_SIZE_4BPP);
+
+    if (slotBase != 0)
+        CpuFastCopy(gfx->tiles + frame->offset,
+                    (void *)(VRAM + TILE_OFFSET_4BPP(slotBase + tile - NUM_TILES_IN_PRIMARY)),
+                    numTiles * TILE_SIZE_4BPP);
 }
 
 static void BuildDoorTiles(u16 *tiles, u16 tileNum, const u8 *paletteNums)
