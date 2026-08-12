@@ -1332,11 +1332,71 @@ void ProcessEvents(void)
 
 // ---------------------------------------------------------------- saves
 
+// Moves a file that an older build left in the preferences directory. Returns
+// true if the destination ends up holding a save, either because one was
+// already there or because this moved it.
+// expectedSize is the only size worth copying, or 0 for "anything non-empty".
+static bool8 MigrateSave(const char *from, const char *to, long expectedSize)
+{
+    FILE *src, *dst;
+    char buffer[4096];
+    long size;
+    size_t n;
+
+    dst = fopen(to, "rb");
+    if (dst != NULL)
+    {
+        fclose(dst);
+        return TRUE; // already migrated, or a newer save is in place
+    }
+
+    src = fopen(from, "rb");
+    if (src == NULL)
+        return FALSE;
+
+    // An earlier build left a zero-byte save behind, and copying that would
+    // both hand the game an empty file and -- because the destination then
+    // exists -- block a real save from ever migrating afterwards.
+    fseek(src, 0, SEEK_END);
+    size = ftell(src);
+    fseek(src, 0, SEEK_SET);
+    if (size <= 0 || (expectedSize != 0 && size != expectedSize))
+    {
+        fclose(src);
+        return FALSE;
+    }
+
+    dst = fopen(to, "wb");
+    if (dst == NULL)
+    {
+        fclose(src);
+        return FALSE;
+    }
+
+    while ((n = fread(buffer, 1, sizeof(buffer), src)) > 0)
+    {
+        if (fwrite(buffer, 1, n, dst) != n)
+        {
+            fclose(src);
+            fclose(dst);
+            remove(to);
+            return FALSE;
+        }
+    }
+
+    fclose(src);
+    fclose(dst);
+    // The original is left alone. A failed copy that still looked successful
+    // would otherwise take the only save with it, and a stale 128 KB file in
+    // the preferences directory costs nothing.
+    return TRUE;
+}
+
 static void ResolveSavePath(void)
 {
     // On desktop, keep using a save sitting next to the binary if one is already
     // there, so existing saves are not orphaned. Otherwise (and always on iOS,
-    // where the bundle is read-only) use the writable preferences directory.
+    // where the bundle is read-only) use a writable directory.
     //
     // This used to return early in the local-save case, which skipped setting
     // sBindPath and skipped LoadBindings entirely: fopen("") then failed on
@@ -1352,6 +1412,93 @@ static void ResolveSavePath(void)
         {
             fclose(local);
             useLocal = TRUE;
+        }
+    }
+#elif defined(SDL_PLATFORM_ANDROID)
+    // Android: the save goes in the app's external files directory --
+    // Android/data/<pkg>/files, what getExternalFilesDir gives -- rather than
+    // the internal one SDL_GetPrefPath returns. Internal storage is private to
+    // the app and unreachable without root, so a save there could not be copied
+    // to a PC, to mGBA, or off a dying phone.
+    //
+    // This is still app-specific storage, so it needs no permission on any
+    // supported release, and it is one of the directories Auto Backup covers by
+    // default -- which is what Google One shows as the app's backed-up data.
+    // See the note beside allowBackup in AndroidManifest.xml: it stays covered
+    // only while no custom backup rules exist, since declaring any include
+    // makes the set exclusive.
+    {
+        const char *external = SDL_GetAndroidExternalStoragePath();
+
+        // Unavailable while the storage is unmounted or shared over USB.
+        if (external != NULL
+         && (SDL_GetAndroidExternalStorageState() & SDL_ANDROID_EXTERNAL_STORAGE_WRITE))
+        {
+            snprintf(sSavePath, sizeof(sSavePath), "%s/pokeemerald.sav", external);
+            snprintf(sBindPath, sizeof(sBindPath), "%s/controls.cfg", external);
+
+            if (pref != NULL)
+            {
+                // SDL_GetPrefPath ignores the org and app names on Android and
+                // hands back the internal files directory itself, so an older
+                // build's save sits directly in it.
+                char oldSave[FILENAME_MAX];
+                char oldBind[FILENAME_MAX];
+
+                snprintf(oldSave, sizeof(oldSave), "%spokeemerald.sav", pref);
+                snprintf(oldBind, sizeof(oldBind), "%scontrols.cfg", pref);
+                MigrateSave(oldSave, sSavePath, (long)sizeof(FLASH_BASE));
+                MigrateSave(oldBind, sBindPath, 0);
+                SDL_free(pref);
+            }
+
+            SDL_SetAtomicInt(&sRebindIndex, -1);
+            SDL_SetAtomicInt(&sConflictIndex, -1);
+            LoadBindings();
+            return;
+        }
+    }
+#elif defined(SDL_PLATFORM_IOS)
+    // iOS only, and deliberately not "mobile" -- Android is handled above and
+    // wants a different directory. SDL_GetUserFolder is also unimplemented on
+    // Android, so sharing this branch would have worked only until SDL
+    // implemented it and moved every Android save without warning.
+    //
+    // The save goes in the app's Documents directory rather than the
+    // preferences directory, because that is the only one the Files app and
+    // Finder can see (with UIFileSharingEnabled and
+    // LSSupportsOpeningDocumentsInPlace in the plist). The file is the real
+    // 128 KB cartridge layout, so being able to copy it out to mGBA or a
+    // flashcart -- and back -- is the whole point of it being there.
+    //
+    // Documents is also included in the device's iCloud backup, so this is what
+    // makes the save survive losing the phone.
+    {
+        const char *documents = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+
+        if (documents != NULL)
+        {
+            snprintf(sSavePath, sizeof(sSavePath), "%spokeemerald.sav", documents);
+            snprintf(sBindPath, sizeof(sBindPath), "%scontrols.cfg", documents);
+
+            if (pref != NULL)
+            {
+                // Anyone who played an earlier build has their save in the
+                // preferences directory; bring it forward once.
+                char oldSave[FILENAME_MAX];
+                char oldBind[FILENAME_MAX];
+
+                snprintf(oldSave, sizeof(oldSave), "%spokeemerald.sav", pref);
+                snprintf(oldBind, sizeof(oldBind), "%scontrols.cfg", pref);
+                MigrateSave(oldSave, sSavePath, (long)sizeof(FLASH_BASE));
+                MigrateSave(oldBind, sBindPath, 0);
+                SDL_free(pref);
+            }
+
+            SDL_SetAtomicInt(&sRebindIndex, -1);
+            SDL_SetAtomicInt(&sConflictIndex, -1);
+            LoadBindings();
+            return;
         }
     }
 #endif
