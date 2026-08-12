@@ -2766,6 +2766,19 @@ static void DrawScanline(uint16_t *pixels, int vcount)
     WIN0enable = false;
     WIN1enable = false;
 
+    // Windows are a 240x160 concept, so a pixel outside that rectangle is in
+    // neither of the two states a window has. Rather than pick one, the extended
+    // area continues whatever the nearest real pixel does: the row and column
+    // are clamped into the vanilla screen before every window test.
+    //
+    // Both of the simpler rules are wrong, in opposite directions. Showing the
+    // extended area unconditionally is what let a dark cave stay lit past the
+    // vanilla screen. Treating it as outside every window instead blacked out
+    // the ordinary overworld, which runs a window covering the whole screen --
+    // everything is inside it, so the area beyond has to be inside it too.
+    int winVcount = vcount < 0 ? 0
+                  : (vcount >= DISPLAY_HEIGHT ? DISPLAY_HEIGHT - 1 : vcount);
+
     //figure out if WIN0 masks on this scanline
     if (REG_DISPCNT & DISPCNT_WIN0_ON)
     {
@@ -2777,10 +2790,10 @@ static void DrawScanline(uint16_t *pixels, int vcount)
         
         //figure out WIN Y wraparound and check bounds accordingly
         if (WIN0top > WIN0bottom) {
-            if (vcount >= WIN0top || vcount < WIN0bottom)
+            if (winVcount >= WIN0top || winVcount < WIN0bottom)
                 WIN0enable = true;
         } else {
-            if (vcount >= WIN0top && vcount < WIN0bottom)
+            if (winVcount >= WIN0top && winVcount < WIN0bottom)
                 WIN0enable = true;
         }
         
@@ -2795,10 +2808,10 @@ static void DrawScanline(uint16_t *pixels, int vcount)
         WIN1left = (REG_WIN0H & 0xFF00) >> 8; //x1
         
         if (WIN1top > WIN1bottom) {
-            if (vcount >= WIN1top || vcount < WIN1bottom)
+            if (winVcount >= WIN1top || winVcount < WIN1bottom)
                 WIN1enable = true;
         } else {
-            if (vcount >= WIN1top && vcount < WIN1bottom)
+            if (winVcount >= WIN1top && winVcount < WIN1bottom)
                 WIN1enable = true;
         }
         
@@ -2840,11 +2853,15 @@ static void DrawScanline(uint16_t *pixels, int vcount)
         for (xpos = 0; xpos < (unsigned)gRenderWidth; xpos++)
         {
             int gx = (int)xpos - gRenderOffsetX;
-            bool inView = (gx >= 0 && gx < DISPLAY_WIDTH);
 
-            if (inView && WIN0enable && winCheckHorizontalBounds(WIN0left, WIN0right, (u16)gx))
+            if (gx < 0)
+                gx = 0;
+            else if (gx >= DISPLAY_WIDTH)
+                gx = DISPLAY_WIDTH - 1;
+
+            if (WIN0enable && winCheckHorizontalBounds(WIN0left, WIN0right, (u16)gx))
                 scanline.winMask[xpos] = REG_WININ & 0x3F;
-            else if (inView && WIN1enable && winCheckHorizontalBounds(WIN1left, WIN1right, (u16)gx))
+            else if (WIN1enable && winCheckHorizontalBounds(WIN1left, WIN1right, (u16)gx))
                 scanline.winMask[xpos] = (REG_WININ >> 8) & 0x3F;
             else
                 scanline.winMask[xpos] = (REG_WINOUT & 0x3F) | WINMASK_WINOUT;
