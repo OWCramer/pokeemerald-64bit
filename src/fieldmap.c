@@ -76,6 +76,29 @@ struct TilesetBank
     u8 secondarySlot;
 };
 
+// Where each map that got filled ended up, so a cell with no map data can take
+// the border of the map it actually sits next to.
+//
+// Border metatiles used to come from whichever map the player was standing on,
+// which was right when vanilla showed seven of them past your own map's edge.
+// Across a viewport that sees two maps out it meant the filler beyond Route 117
+// was Mauville's ocean while you stood in Mauville and Route 117's trees once
+// you stood in Route 117 -- the same piece of world changing as you walked, on
+// top of simply being the wrong terrain.
+struct FilledMapRect
+{
+    s16 x;
+    s16 y;
+    s16 width;
+    s16 height;
+    const u16 *border;
+    u8 bank;
+};
+
+#define MAX_FILLED_MAP_RECTS 32
+static struct FilledMapRect sFilledMapRects[MAX_FILLED_MAP_RECTS];
+static u8 sFilledMapRectCount;
+
 static struct TilesetBank sTilesetBanks[MAX_TILESET_BANKS];
 static u8 sTilesetBankCount = 1;
 static u8 sCurrentTilesetBank;
@@ -93,6 +116,8 @@ extern const struct MapLayout *const gMapLayouts[];
 static void CopyTilesetToVramDirect(struct Tileset const *tileset, u16 numTiles, u32 tileOffset);
 static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u16 size);
 static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHeader, s32 x2, s32 y2, s32 width, s32 height);
+static u16 GetBorderBlockAt(s32 x, s32 y);
+static u8 GetBorderBankAt(s32 x, s32 y);
 static void ResetTilesetBanks(void);
 static void InitMapLayoutData(const struct MapHeader *mapHeader);
 static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height);
@@ -107,7 +132,6 @@ static const struct MapConnection *GetIncomingConnection(u8 direction, s32 x, s3
 static bool8 IsPosInIncomingConnectingMap(u8 direction, s32 x, s32 y, const struct MapConnection *connection);
 static bool8 IsCoordInIncomingConnectingMap(s32 coord, s32 srcMax, s32 destMax, s32 offset);
 
-#define GetBorderBlockAt(x, y) (gMapHeader.mapLayout->border[((x + 1) & 1) + (((y + 1) & 1) << 1)] | MAPGRID_IMPASSABLE)
 
 // Map coordinates are offset by MAP_BORDER_EXTRA to reach a layout index; the
 // coordinate space itself is unchanged.
@@ -272,6 +296,7 @@ static void ResetTilesetBanks(void)
         sCurrentTilesetBank = RegisterTilesetBank(gMapHeader.mapLayout->primaryTileset,
                                                   gMapHeader.mapLayout->secondaryTileset);
     memset(sBackupMapBank, sCurrentTilesetBank, sizeof(sBackupMapBank));
+    sFilledMapRectCount = 0;
     PublishTilesetBankBases();
 }
 
@@ -316,9 +341,93 @@ u8 GetTilesetBankCount(void)
 
 u8 MapGridGetTilesetBankAt(s32 x, s32 y)
 {
+    // A cell with no map data draws a border metatile, so it has to be decoded
+    // against the tileset of whichever map that border came from.
     if (!AreCoordsWithinMapGridBounds(x, y))
-        return 0;
+        return GetBorderBankAt(x, y);
+    if (gBackupMapLayout.map[MapGridIndex(x, y)] == MAPGRID_UNDEFINED)
+        return GetBorderBankAt(x, y);
     return sBackupMapBank[MapGridIndex(x, y)];
+}
+
+static void RecordFilledMapRect(s32 x, s32 y, s32 width, s32 height, const u16 *border, u8 bank)
+{
+    struct FilledMapRect *rect;
+
+    if (sFilledMapRectCount >= MAX_FILLED_MAP_RECTS || border == NULL)
+        return;
+
+    rect = &sFilledMapRects[sFilledMapRectCount++];
+    rect->x = x;
+    rect->y = y;
+    rect->width = width;
+    rect->height = height;
+    rect->border = border;
+    rect->bank = bank;
+}
+
+// The filled map a cell with no data of its own belongs to: the nearest one it
+// sits directly above, below, or beside. A cell diagonally off every map
+// belongs to none of them and falls back to the map the player is on, which is
+// the old behaviour and only ever shows in a far corner.
+static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
+{
+    const struct FilledMapRect *best = NULL;
+    s32 bestDistance = 0x7FFF;
+    u32 i;
+
+    for (i = 0; i < sFilledMapRectCount; i++)
+    {
+        const struct FilledMapRect *rect = &sFilledMapRects[i];
+        s32 distance;
+
+        if (x >= rect->x && x < rect->x + rect->width)
+        {
+            if (y < rect->y)
+                distance = rect->y - y;
+            else if (y >= rect->y + rect->height)
+                distance = y - (rect->y + rect->height) + 1;
+            else
+                distance = 0;
+        }
+        else if (y >= rect->y && y < rect->y + rect->height)
+        {
+            if (x < rect->x)
+                distance = rect->x - x;
+            else
+                distance = x - (rect->x + rect->width) + 1;
+        }
+        else
+        {
+            continue;
+        }
+
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            best = rect;
+        }
+    }
+
+    return best;
+}
+
+// Parity stays global rather than relative to the owning map: it is what vanilla
+// indexes a border's 2x2 pattern by, and making it map-relative would shift the
+// current map's own border by one.
+static u16 GetBorderBlockAt(s32 x, s32 y)
+{
+    const struct FilledMapRect *owner = FindBorderOwner(x, y);
+    const u16 *border = owner != NULL ? owner->border : gMapHeader.mapLayout->border;
+
+    return border[((x + 1) & 1) + (((y + 1) & 1) << 1)] | MAPGRID_IMPASSABLE;
+}
+
+static u8 GetBorderBankAt(s32 x, s32 y)
+{
+    const struct FilledMapRect *owner = FindBorderOwner(x, y);
+
+    return owner != NULL ? owner->bank : sCurrentTilesetBank;
 }
 
 static void InitMapLayoutData(const struct MapHeader *mapHeader)
@@ -345,6 +454,10 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
 {
     u16 *dest;
     s32 y;
+
+    RecordFilledMapRect(MAP_BORDER_TOTAL - MAP_BORDER_EXTRA, MAP_BORDER_TOTAL - MAP_BORDER_EXTRA,
+                        width, height, gMapHeader.mapLayout->border, sCurrentTilesetBank);
+
     dest = gBackupMapLayout.map;
     dest += gBackupMapLayout.width * MAP_BORDER_TOTAL + MAP_BORDER_TOTAL;
     for (y = 0; y < height; y++)
@@ -509,6 +622,8 @@ static void FillConnection(s32 x, s32 y, const struct MapHeader *connectedMapHea
     // tileset rather than ours.
     bank = RegisterTilesetBank(connectedMapHeader->mapLayout->primaryTileset,
                                connectedMapHeader->mapLayout->secondaryTileset);
+    RecordFilledMapRect(x - MAP_BORDER_EXTRA, y - MAP_BORDER_EXTRA, width, height,
+                        connectedMapHeader->mapLayout->border, bank);
     bankDest = &sBackupMapBank[gBackupMapLayout.width * y + x];
 
     for (i = 0; i < height; i++)
