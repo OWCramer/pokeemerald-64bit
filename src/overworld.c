@@ -850,6 +850,18 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
             ApplyWeatherColorMapToPal(TILESET_BANK_PAL_BASE(bank) + paletteIndex);
     }
 
+    // Push the palettes to hardware now, with the tiles.
+    //
+    // Everything above changed both: CopySecondaryTilesetToVramNow wrote VRAM
+    // this instant, but palettes only reach the hardware buffer when the vblank
+    // handler runs TransferPlttBuffer -- and the frame is drawn *before* that
+    // handler, so the map would be shown for one frame with the tileset it just
+    // gained under the colours of the one it just lost. Vanilla never had the
+    // mismatch because its tiles went through the same vblank as its palettes;
+    // this path loads them synchronously so they would otherwise arrive a frame
+    // apart.
+    CpuCopy16(gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
+
     InitSecondaryTilesetAnimation();
     UpdateLocationHistoryForRoamer();
     RoamerMove();
