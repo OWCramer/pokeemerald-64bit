@@ -1,6 +1,6 @@
 # Android: where the save lives
 
-**Status: design. Nothing is implemented.** Branch `owen/android-saf-save`.
+**Status: implemented, untested on a device.** Branch `owen/android-saf-save`.
 
 ## Where it stands
 
@@ -107,12 +107,22 @@ copy the save to a PC and open it in mGBA; paste one back in and confirm it
 loads on the next launch; delete it and confirm a fresh game rather than a
 resurrection; confirm the save still appears in Google One's app data.
 
-## Open questions
+## Replacing the save while the game is running
 
-1. **Expose `controls.cfg` too, or only the save?** It is editable text and
-   being able to fix a binding from a PC is useful, but it is also a file the
-   player can break in ways the game will not explain.
-2. **Re-read on foreground?** It would make pasting in a save work without
-   closing the game, which is what most people will try first. It also means the
-   game can have the world change under it if the file is touched while
-   suspended, so it wants care about *when* the re-read happens.
+Only the save is published. `controls.cfg` is editable text a player can break
+in ways the game will not explain.
+
+Pasting a save in, or deleting it, ends the process. A running game holds the
+previous save in memory and writes it back at every save point, so without this
+the pasted file would be overwritten within moments and a deleted one recreated
+-- the resurrection this design exists to avoid, arriving by another route.
+
+The process is *killed*, not asked to quit, and that distinction is the whole
+thing: every orderly exit path this port has -- backgrounding, quitting, soft
+reset -- ends in `StoreSaveFile`, which is exactly the write that would undo the
+change. Anything polite would defeat it.
+
+`onClose` on the descriptor is what makes this safe to do: the kill happens once
+the writer has finished, not while the copy is in flight. If the game is not
+running -- and the provider is often the only reason the process exists -- there
+is nothing to end, and the next launch simply reads what is on disk.

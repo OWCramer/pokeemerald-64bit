@@ -29,6 +29,22 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true" >
 
+        <!-- Publishes the save to the Files app without moving it out of
+             app-private storage, so it stays inside Auto Backup. The system
+             holds MANAGE_DOCUMENTS, so that permission restricts binding to the
+             system rather than requesting anything. See
+             docs/ANDROID_SAVE_LOCATION.md. -->
+        <provider
+            android:name="com.owcramer.pokeemerald.SaveDocumentsProvider"
+            android:authorities="com.owcramer.pokeemerald.saves"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
         <!-- SDLActivity's default getLibraries() loads SDL3 then "main" (our
              libmain.so), and getMainFunction() returns "SDL_main". Fully
              qualified because this app's namespace is com.owcramer.pokeemerald,
