@@ -67,6 +67,10 @@ struct OamData
              u32 mosaic:1;      // 0x10
              u32 bpp:1;         // 0x20
              u32 shape:2;       // 0x40, 0x80 -> 0xC0
+             // Port extension, in bits the widened y left spare. The sprite
+             // repeats to fill the viewport instead of drawing once. See
+             // DrawTiledSprite in src/platform/gba_fast_draw.c.
+             u32 tileAcross:1;
 
     /*0x04*/ s32 x:16;   // widened from 9: real screen coordinate, signed
              u32 matrixNum:5;   // bits 3/4 are h-flip/v-flip if not in affine mode
