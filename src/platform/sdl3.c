@@ -1332,11 +1332,57 @@ void ProcessEvents(void)
 
 // ---------------------------------------------------------------- saves
 
+// Moves a file that an older build left in the preferences directory. Returns
+// true if the destination ends up holding a save, either because one was
+// already there or because this moved it.
+static bool8 MigrateSave(const char *from, const char *to)
+{
+    FILE *src, *dst;
+    char buffer[4096];
+    size_t n;
+
+    dst = fopen(to, "rb");
+    if (dst != NULL)
+    {
+        fclose(dst);
+        return TRUE; // already migrated, or a newer save is in place
+    }
+
+    src = fopen(from, "rb");
+    if (src == NULL)
+        return FALSE;
+
+    dst = fopen(to, "wb");
+    if (dst == NULL)
+    {
+        fclose(src);
+        return FALSE;
+    }
+
+    while ((n = fread(buffer, 1, sizeof(buffer), src)) > 0)
+    {
+        if (fwrite(buffer, 1, n, dst) != n)
+        {
+            fclose(src);
+            fclose(dst);
+            remove(to);
+            return FALSE;
+        }
+    }
+
+    fclose(src);
+    fclose(dst);
+    // The original is left alone. A failed copy that still looked successful
+    // would otherwise take the only save with it, and a stale 128 KB file in
+    // the preferences directory costs nothing.
+    return TRUE;
+}
+
 static void ResolveSavePath(void)
 {
     // On desktop, keep using a save sitting next to the binary if one is already
     // there, so existing saves are not orphaned. Otherwise (and always on iOS,
-    // where the bundle is read-only) use the writable preferences directory.
+    // where the bundle is read-only) use a writable directory.
     //
     // This used to return early in the local-save case, which skipped setting
     // sBindPath and skipped LoadBindings entirely: fopen("") then failed on
@@ -1352,6 +1398,44 @@ static void ResolveSavePath(void)
         {
             fclose(local);
             useLocal = TRUE;
+        }
+    }
+#else
+    // iOS: the save goes in the app's Documents directory rather than the
+    // preferences directory, because that is the only one the Files app and
+    // Finder can see (with UIFileSharingEnabled and
+    // LSSupportsOpeningDocumentsInPlace in the plist). The file is the real
+    // 128 KB cartridge layout, so being able to copy it out to mGBA or a
+    // flashcart -- and back -- is the whole point of it being there.
+    //
+    // Documents is also included in the device's iCloud backup, so this is what
+    // makes the save survive losing the phone.
+    {
+        const char *documents = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+
+        if (documents != NULL)
+        {
+            snprintf(sSavePath, sizeof(sSavePath), "%spokeemerald.sav", documents);
+            snprintf(sBindPath, sizeof(sBindPath), "%scontrols.cfg", documents);
+
+            if (pref != NULL)
+            {
+                // Anyone who played an earlier build has their save in the
+                // preferences directory; bring it forward once.
+                char oldSave[FILENAME_MAX];
+                char oldBind[FILENAME_MAX];
+
+                snprintf(oldSave, sizeof(oldSave), "%spokeemerald.sav", pref);
+                snprintf(oldBind, sizeof(oldBind), "%scontrols.cfg", pref);
+                MigrateSave(oldSave, sSavePath);
+                MigrateSave(oldBind, sBindPath);
+                SDL_free(pref);
+            }
+
+            SDL_SetAtomicInt(&sRebindIndex, -1);
+            SDL_SetAtomicInt(&sConflictIndex, -1);
+            LoadBindings();
+            return;
         }
     }
 #endif
