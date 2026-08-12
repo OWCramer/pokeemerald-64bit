@@ -366,15 +366,22 @@ static void RecordFilledMapRect(s32 x, s32 y, s32 width, s32 height, const u16 *
     rect->bank = bank;
 }
 
-// The filled map a cell with no data of its own belongs to: the nearest one it
-// sits directly above or below, or failing that the nearest one it sits beside.
+// The filled map a cell with no data of its own belongs to: the nearest one,
+// measured to its rectangle across both axes at once.
 //
-// Choosing purely by distance instead let the winner flip along the line where
-// "so far above map A" and "so far left of map B" traded off, which drew a
-// diagonal staircase of one border cutting into the other across every corner.
-// Settling the axis first keeps every seam straight, which is what a boundary
-// between two routes looks like anyway.
-static const struct FilledMapRect *FindBorderOwnerOnAxis(s32 x, s32 y, bool32 vertical)
+// Two narrower rules were wrong in opposite ways. Picking by distance along
+// whichever single axis happened to match let the winner flip along the line
+// where a vertical and a horizontal candidate traded off, drawing a diagonal
+// staircase of one border into the other. Settling the axis first instead --
+// directly above or below wins, then beside -- meant a map 42 metatiles up beat
+// the one 27 across, which put Littleroot's trees in the ocean west of
+// Slateport.
+//
+// Summing both axes asks the question that was meant all along: which map is
+// this cell actually closest to. A cell directly off one map's edge has no
+// distance on the other axis, so that map wins outright, and only a genuine
+// corner -- diagonally off everything -- is decided by the sum.
+static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
 {
     const struct FilledMapRect *best = NULL;
     s32 bestDistance = 0x7FFF;
@@ -383,31 +390,19 @@ static const struct FilledMapRect *FindBorderOwnerOnAxis(s32 x, s32 y, bool32 ve
     for (i = 0; i < sFilledMapRectCount; i++)
     {
         const struct FilledMapRect *rect = &sFilledMapRects[i];
-        s32 distance;
+        s32 dx = 0, dy = 0, distance;
 
-        if (vertical)
-        {
-            if (x < rect->x || x >= rect->x + rect->width)
-                continue;
-            if (y < rect->y)
-                distance = rect->y - y;
-            else if (y >= rect->y + rect->height)
-                distance = y - (rect->y + rect->height) + 1;
-            else
-                distance = 0;
-        }
-        else
-        {
-            if (y < rect->y || y >= rect->y + rect->height)
-                continue;
-            if (x < rect->x)
-                distance = rect->x - x;
-            else if (x >= rect->x + rect->width)
-                distance = x - (rect->x + rect->width) + 1;
-            else
-                distance = 0;
-        }
+        if (x < rect->x)
+            dx = rect->x - x;
+        else if (x >= rect->x + rect->width)
+            dx = x - (rect->x + rect->width) + 1;
 
+        if (y < rect->y)
+            dy = rect->y - y;
+        else if (y >= rect->y + rect->height)
+            dy = y - (rect->y + rect->height) + 1;
+
+        distance = dx + dy;
         if (distance < bestDistance)
         {
             bestDistance = distance;
@@ -416,16 +411,6 @@ static const struct FilledMapRect *FindBorderOwnerOnAxis(s32 x, s32 y, bool32 ve
     }
 
     return best;
-}
-
-static const struct FilledMapRect *FindBorderOwner(s32 x, s32 y)
-{
-    const struct FilledMapRect *owner = FindBorderOwnerOnAxis(x, y, TRUE);
-
-    if (owner == NULL)
-        owner = FindBorderOwnerOnAxis(x, y, FALSE);
-
-    return owner;
 }
 
 // Parity stays global rather than relative to the owning map: it is what vanilla
