@@ -40,6 +40,21 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true" >
 
+        <!-- Never offer "New window". Desktop shells (Android's own desktop
+             windowing, DeX, ChromeOS) put a multi-instance affordance on apps
+             that declare support for one; this app must not have it. Two windows
+             would be two views of one process's globals: one emulated GBA, one
+             flash image, one save file being written from both. The second
+             instance has nothing to show but a corrupted save.
+
+             Declared false rather than left out: absent means "no opinion", and
+             the affordance is the sort of thing a future release turns on by
+             default for resizeable apps. The real guarantee is launchMode below;
+             this is what stops the system from offering what it cannot deliver. -->
+        <property
+            android:name="android.window.PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI"
+            android:value="false" />
+
         <!-- The launcher entry is the save-folder doorway, not the game: the
              folder question has to be answered before the game process starts
              and reads its save. It starts GameActivity and finishes, so it is
@@ -51,6 +66,8 @@
             android:label="@string/app_name"
             android:theme="@style/SetupTheme"
             android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:documentLaunchMode="never"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="true"
             >
@@ -63,12 +80,23 @@
         <!-- GameActivity extends SDLActivity, whose default getLibraries()
              loads SDL3 then "main" (our libmain.so) and whose getMainFunction()
              returns "SDL_main"; it adds the save mirror and nothing else.
-             singleInstance means this always lands in its own task, so the
-             launcher activity above hands off to it and gets out of the way. -->
+
+             singleInstance is what makes the game single-instance for real, and
+             not only by convention: the system allows exactly one instance of
+             such an activity, alone in its task, and every later launch is
+             delivered to it through onNewIntent instead of creating a second.
+             That is also why the launcher activity above hands off to it and
+             gets out of the way.
+
+             documentLaunchMode="never" refuses FLAG_ACTIVITY_NEW_DOCUMENT and
+             FLAG_ACTIVITY_MULTIPLE_TASK, the two flags a caller would otherwise
+             use to ask for a second task; exported="false" means nothing outside
+             the app can aim an intent here at all. -->
         <activity android:name=".GameActivity"
             android:label="@string/app_name"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
+            android:documentLaunchMode="never"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
             android:exported="false"
