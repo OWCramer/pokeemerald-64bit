@@ -4,6 +4,7 @@
 // so there is no externalNativeBuild here.
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
 // Version is derived from the release tag, not hardcoded. CI passes the tag
@@ -35,7 +36,12 @@ android {
     compileSdk 35
     defaultConfig {
         applicationId "com.owcramer.pokeemerald"
-        minSdkVersion 21
+        // Android 8.0. The floor is set by what the app's own UI uses rather
+        // than by SDL (which would still run on 21): android:appCategory, the
+        // Material 3 dialog styling, and the document picker's EXTRA_INITIAL_URI
+        // all arrive in 26, and supporting older releases would mean carrying a
+        // second, worse code path for a share of devices that no longer exists.
+        minSdkVersion 26
         targetSdkVersion 35
         versionCode appVersionCode
         versionName appVersionName
@@ -59,4 +65,20 @@ android {
     lint {
         abortOnError = false
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+// The app's own code is Kotlin; the org.libsdl.app glue stays as upstream ships
+// it so it can be updated by dropping in a new SDL release.
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    // Material 3 dialogs, and dynamic colour on Android 12+.
+    implementation 'com.google.android.material:material:1.12.0'
 }

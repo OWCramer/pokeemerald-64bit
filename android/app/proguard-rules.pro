@@ -9,6 +9,12 @@
 
 # Add any project specific keep options here:
 
+# Looked up by name from C (MirrorSaveFile in src/platform/sdl3.c), so nothing
+# in the Java sources references it and a shrinker would otherwise drop it.
+-keep,includedescriptorclasses,allowoptimization class com.owcramer.pokeemerald.GameActivity {
+    void pushSaveToMirror();
+}
+
 # If your project uses WebView with JS, uncomment the following
 # and specify the fully qualified class name to the JavaScript interface
 # class:
