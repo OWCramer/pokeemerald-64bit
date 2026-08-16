@@ -13,32 +13,45 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- allowBackup: the save lives in the app's external files directory
-         (Android/data/<pkg>/files, see ResolveSavePath). That is one of the
+    <!-- allowBackup: the save the game plays from lives in the app's internal
+         files directory (see ResolveSavePath in sdl3.c). That is one of the
          directories Auto Backup covers by default, which is what Google One
          lists as this app's data, and at 128 KB it is well under the 25 MB cap.
 
          It stays covered only while there are no custom backup rules. Declaring
          android:fullBackupContent or android:dataExtractionRules makes the set
-         exclusive, so anything added later must include domain="external" or
-         the save silently stops being backed up. -->
+         exclusive, so anything added later must keep domain="file" or the save
+         silently stops being backed up.
+
+         The user-facing copy in the folder picked at first launch (SaveMirror)
+         is deliberately NOT the backed-up one: it lives in shared storage,
+         which Auto Backup does not cover. Internal is what Google restores onto
+         a new phone, and the mirror is re-seeded from it on first launch there. -->
+    <!-- appCategory is what makes the system treat this as a game rather than
+         a generic app: Game Mode and the Game Dashboard overlay (Android 12+,
+         screenshots, recording, FPS, Do Not Disturb) only attach to apps in the
+         game category, and launchers and Settings' per-category storage and
+         battery breakdowns use the same signal. -->
     <application android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:appCategory="game"
         android:allowBackup="true"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true" >
 
-        <!-- SDLActivity's default getLibraries() loads SDL3 then "main" (our
-             libmain.so), and getMainFunction() returns "SDL_main". Fully
-             qualified because this app's namespace is com.owcramer.pokeemerald,
-             not org.libsdl.app. -->
-        <activity android:name="org.libsdl.app.SDLActivity"
+        <!-- The launcher entry is the save-folder doorway, not the game: the
+             folder question has to be answered before the game process starts
+             and reads its save. It starts GameActivity and finishes, so it is
+             on screen for a frame at most, and excludeFromRecents keeps its
+             task out of the recents list, so the only task the user ever sees
+             is the game's. No noHistory: that would destroy this activity the
+             moment the picker opens, and the result would never come back. -->
+        <activity android:name=".SaveSetupActivity"
             android:label="@string/app_name"
-            android:alwaysRetainTaskState="true"
-            android:launchMode="singleInstance"
+            android:theme="@style/SetupTheme"
+            android:excludeFromRecents="true"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
-            android:preferMinimalPostProcessing="true"
             android:exported="true"
             >
             <intent-filter>
@@ -46,6 +59,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- GameActivity extends SDLActivity, whose default getLibraries()
+             loads SDL3 then "main" (our libmain.so) and whose getMainFunction()
+             returns "SDL_main"; it adds the save mirror and nothing else.
+             singleInstance means this always lands in its own task, so the
+             launcher activity above hands off to it and gets out of the way. -->
+        <activity android:name=".GameActivity"
+            android:label="@string/app_name"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="false"
+            />
     </application>
 
 </manifest>

@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Pokémon Emerald</string>
+
+    <!-- Shown once, by SaveSetupActivity, before the folder picker. -->
+    <string name="save_folder_title">Choose a save folder</string>
+    <string name="save_folder_message">Pick a folder to keep a copy of your save file in, so you can back it up, move it to another device, or replace it with one of your own.\n\nThe copy in the folder is loaded when the game starts, and updated every time you save. Your progress is backed up to Google either way.</string>
+    <string name="save_folder_choose">Choose folder</string>
+    <string name="save_folder_skip">Not now</string>
 </resources>

@@ -1,7 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base application theme. -->
+    <!-- The game itself: no system UI of any kind, SDL owns every pixel. -->
     <style name="AppTheme" parent="android:Theme.NoTitleBar.Fullscreen">
         <!-- Customize your theme here. -->
+    </style>
+
+    <!-- SaveSetupActivity. Material 3 so the save-folder dialog is the same
+         shape, type and colour as the system's own (and picks up the wallpaper
+         palette on Android 12+, see DynamicColors); DayNight so it follows the
+         device theme. The window itself is never seen: the activity is a
+         doorway that either shows that one dialog or starts the game, so it is
+         transparent, un-animated, and not dimmed behind. -->
+    <style name="SetupTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 </resources>

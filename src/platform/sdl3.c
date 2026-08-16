@@ -26,6 +26,10 @@
 // Must be included in the translation unit defining main(). On iOS this hands
 // the entry point to SDL so UIKit owns the run loop; on desktop it is inert.
 #include <SDL3/SDL_main.h>
+#ifdef SDL_PLATFORM_ANDROID
+// For the call out to GameActivity that mirrors the save; see MirrorSaveFile.
+#include <jni.h>
+#endif
 
 #include "global.h"
 #include "field_camera.h"
@@ -1402,6 +1406,14 @@ static void ResolveSavePath(void)
     // sBindPath and skipped LoadBindings entirely: fopen("") then failed on
     // every save, so bindings silently never persisted. Both paths now fall
     // through to the same tail.
+    //
+    // Android has no branch of its own and takes the preferences directory,
+    // which SDL maps to the app's internal files directory (getFilesDir). That
+    // is private to the app and unreachable without root -- deliberately, since
+    // it is what Auto Backup covers and therefore what Google One restores. The
+    // copy users can actually reach is kept in a folder they pick, mirrored to
+    // and from this one by SaveMirror on the Java side; see
+    // Platform_StoreSaveFile and android/.../SaveMirror.java.
     bool8 useLocal = FALSE;
     char *pref = SDL_GetPrefPath("pokeemerald", "pokeemerald64");
 
@@ -1412,50 +1424,6 @@ static void ResolveSavePath(void)
         {
             fclose(local);
             useLocal = TRUE;
-        }
-    }
-#elif defined(SDL_PLATFORM_ANDROID)
-    // Android: the save goes in the app's external files directory --
-    // Android/data/<pkg>/files, what getExternalFilesDir gives -- rather than
-    // the internal one SDL_GetPrefPath returns. Internal storage is private to
-    // the app and unreachable without root, so a save there could not be copied
-    // to a PC, to mGBA, or off a dying phone.
-    //
-    // This is still app-specific storage, so it needs no permission on any
-    // supported release, and it is one of the directories Auto Backup covers by
-    // default -- which is what Google One shows as the app's backed-up data.
-    // See the note beside allowBackup in AndroidManifest.xml: it stays covered
-    // only while no custom backup rules exist, since declaring any include
-    // makes the set exclusive.
-    {
-        const char *external = SDL_GetAndroidExternalStoragePath();
-
-        // Unavailable while the storage is unmounted or shared over USB.
-        if (external != NULL
-         && (SDL_GetAndroidExternalStorageState() & SDL_ANDROID_EXTERNAL_STORAGE_WRITE))
-        {
-            snprintf(sSavePath, sizeof(sSavePath), "%s/pokeemerald.sav", external);
-            snprintf(sBindPath, sizeof(sBindPath), "%s/controls.cfg", external);
-
-            if (pref != NULL)
-            {
-                // SDL_GetPrefPath ignores the org and app names on Android and
-                // hands back the internal files directory itself, so an older
-                // build's save sits directly in it.
-                char oldSave[FILENAME_MAX];
-                char oldBind[FILENAME_MAX];
-
-                snprintf(oldSave, sizeof(oldSave), "%spokeemerald.sav", pref);
-                snprintf(oldBind, sizeof(oldBind), "%scontrols.cfg", pref);
-                MigrateSave(oldSave, sSavePath, (long)sizeof(FLASH_BASE));
-                MigrateSave(oldBind, sBindPath, 0);
-                SDL_free(pref);
-            }
-
-            SDL_SetAtomicInt(&sRebindIndex, -1);
-            SDL_SetAtomicInt(&sConflictIndex, -1);
-            LoadBindings();
-            return;
         }
     }
 #elif defined(SDL_PLATFORM_IOS)
@@ -1552,9 +1520,54 @@ static void StoreSaveFile(void)
     }
 }
 
+#ifdef SDL_PLATFORM_ANDROID
+// Hands the freshly written save to GameActivity, which copies it into the
+// folder the user picked (SaveMirror.java). Called on the AgbMain thread, which
+// SDL creates as a Java thread, so it is already attached to the VM.
+//
+// Everything here is best-effort: the save on disk is the authoritative one and
+// the game plays fine with no mirror at all, so a missing method or a provider
+// error must not become a crash.
+static void MirrorSaveFile(void)
+{
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity;
+    jclass cls;
+    jmethodID method;
+
+    if (env == NULL)
+        return;
+
+    activity = (jobject)SDL_GetAndroidActivity();  // local ref, ours to release
+    if (activity == NULL)
+        return;
+
+    cls = (*env)->GetObjectClass(env, activity);
+    method = (*env)->GetMethodID(env, cls, "pushSaveToMirror", "()V");
+    if (method != NULL)
+        (*env)->CallVoidMethod(env, activity, method);
+
+    // GetMethodID raises NoSuchMethodError rather than only returning NULL, and
+    // a pending exception poisons the next JNI call from this thread.
+    if ((*env)->ExceptionCheck(env))
+    {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+    }
+
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+}
+#endif
+
 void Platform_StoreSaveFile(void)
 {
     StoreSaveFile();
+#ifdef SDL_PLATFORM_ANDROID
+    // After StoreSaveFile, not instead of it: the mirror is copied from the
+    // file, so it has to be on disk (fflush'd) first.
+    MirrorSaveFile();
+#endif
 }
 
 static void CloseSaveFile(void)
